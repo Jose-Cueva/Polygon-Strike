@@ -84,6 +84,10 @@ b{font-weight:700;}
 input[type=range]{ accent-color:var(--accent); flex:1; }
 #botCountVal{ color:var(--text); font-weight:700; min-width:24px; text-align:center; }
 
+/* ---------------- Extra setup controls (sensitivity/volume/time/toggles) ---------------- */
+#sensitivityVal, #volumeVal, #timeLimitVal{ color:var(--text); font-weight:700; min-width:58px; text-align:center; }
+.toggle-row{ display:flex; gap:8px; }
+
 .setup-footer{ display:flex; justify-content:space-between; align-items:center; margin-top:26px; }
 
 /* ============================= HUD ============================= */
@@ -97,6 +101,10 @@ input[type=range]{ accent-color:var(--accent); flex:1; }
 #ch-right{height:2px;width:9px;left:11px;top:-1px;}
 #ch-dot{width:3px;height:3px;top:-1.5px;left:-1.5px;border-radius:50%;background:#d2ffbe;position:absolute;}
 
+#sightDot{position:absolute;top:50%;left:50%;width:0;height:0;opacity:0;transition:opacity .1s;}
+#sightDotRing{position:absolute;top:50%;left:50%;width:26px;height:26px;border-radius:50%;border:1.5px solid rgba(255,60,40,0.55);transform:translate(-50%,-50%);}
+#sightDotCenter{position:absolute;top:50%;left:50%;width:4px;height:4px;border-radius:50%;background:#ff3b30;box-shadow:0 0 6px 1px rgba(255,60,40,0.9);transform:translate(-50%,-50%);}
+
 #hitmarker{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;opacity:0;}
 #hitmarker::before,#hitmarker::after{content:'';position:absolute;top:50%;left:50%;width:34px;height:3px;background:var(--danger);box-shadow:0 0 6px var(--danger);}
 #hitmarker::before{transform:translate(-50%,-50%) rotate(45deg);}
@@ -106,6 +114,14 @@ input[type=range]{ accent-color:var(--accent); flex:1; }
 #hitDirArrow{position:absolute;left:-14px;top:-130px;width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-bottom:22px solid rgba(255,60,50,0.85);filter:drop-shadow(0 0 5px rgba(255,40,30,0.8));}
 
 #vignette{position:absolute;inset:0;box-shadow:inset 0 0 220px 60px rgba(180,0,0,0);transition:box-shadow .12s ease-out;}
+
+#gwKillFlash{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(circle at center, rgba(255,176,32,0) 0%, rgba(255,176,32,0) 55%, rgba(255,92,48,0.35) 100%);}
+#gwKillFlash.gw-kill-flash-active{animation:gwKillFlashPulse 220ms ease-out;}
+@keyframes gwKillFlashPulse{
+  0%{opacity:0;}
+  15%{opacity:1;}
+  100%{opacity:0;}
+}
 
 #scopeOverlay{position:absolute;inset:0;opacity:0;}
 #scopeCircle{position:absolute;top:50%;left:50%;width:340px;height:340px;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 3000px #050503, inset 0 0 40px 10px rgba(0,0,0,0.6);border:2px solid rgba(10,14,8,0.8);}

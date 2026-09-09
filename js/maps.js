@@ -3,130 +3,199 @@ window.GW = window.GW || {};
 (function(){
 
 function industrial(E){
-  const c = [
-    [12,1.25,-9,0,'orange'],[12,1.25,-2,0,'orange'],
-    [-16,1.25,7, Math.PI/2, 'blue'],[-16,1.25,11.7, Math.PI/2, 'blue'],
-    [4,1.25,20, 0.4, 'green'],
-    [-7,1.25,-20, -0.3, 'orange'],
-    [25,1.25,11, Math.PI/2, 'blue'],
-    [-27,1.25,-11, 0, 'green'],
-    [0,1.25,-34, Math.PI/2, 'orange'],
-    [34,1.25,-27, 0.6, 'blue'],
-    [-4,1.25,32, 0.9, 'green']
+  // Dense container maze: 4 short lanes (N/S/E/W) converge on a central
+  // contested courtyard (the bomb site). Team A holds the SW corner, Team B
+  // the NE corner; the NW/SE corners are neutral flank quadrants that cross-
+  // connect the lanes for chaotic close-range flanking, Shipment/Rust style.
+
+  const containers = [
+    // north lane flank (leads toward A corner)
+    [6,2.5,2.4, -6,1.25,-11, 'orange', 0],
+    [6,2.5,2.4, -4,1.25,-19, 'dark',   0.2],
+    [5,2.4,2.2,  3,1.25,-13, 'blue',   1.5],
+    [5,2.4,2.2,  4,1.25,-22, 'green',  1.3],
+    // west lane flank (leads toward A corner)
+    [6,2.5,2.4,-11,1.25, -6, 'blue',   1.57],
+    [6,2.5,2.4,-19,1.25, -4, 'green',  1.35],
+    [5,2.4,2.2,-13,1.25,  3, 'orange', 0.15],
+    [5,2.4,2.2,-22,1.25,  4, 'dark',  -0.25],
+    // south lane flank (leads toward B corner)
+    [6,2.5,2.4,  6,1.25, 11, 'blue',   0],
+    [6,2.5,2.4,  4,1.25, 19, 'orange', 0.2],
+    [5,2.4,2.2, -3,1.25, 13, 'dark',   1.5],
+    [5,2.4,2.2, -4,1.25, 22, 'green',  1.3],
+    // east lane flank (leads toward B corner)
+    [6,2.5,2.4, 11,1.25,  6, 'green',  1.57],
+    [6,2.5,2.4, 19,1.25,  4, 'blue',   1.35],
+    [5,2.4,2.2, 13,1.25, -3, 'orange', 0.15],
+    [5,2.4,2.2, 22,1.25, -4, 'dark',  -0.25],
+    // neutral quadrant connectors (chaotic cross-flank clusters)
+    [5,2.3,2.2,-18,1.15, 18, 'orange', 0.6],
+    [5,2.3,2.2,-27,1.15, 15, 'dark',  -0.3],
+    [5,2.3,2.2,-15,1.15, 27, 'green',  0.9],
+    [5,2.3,2.2, 18,1.15,-18, 'blue',   0.6],
+    [5,2.3,2.2, 27,1.15,-15, 'green', -0.3],
+    [5,2.3,2.2, 15,1.15,-27, 'orange', 0.9]
   ];
-  c.forEach(p=>E.addBox(6,2.5,2.4,p[0],p[1],p[2],p[4],{rotY:p[3]}));
+  containers.forEach(p=>E.addBox(p[0],p[1],p[2],p[3],p[4],p[5],p[6],{rotY:p[7]}));
 
-  const crates = [[7,4],[9,-16],[-11,-4],[18,-18],[-20,18],[2,-9],[-4,22],[29,-2],[-32,4],[16,30]];
-  crates.forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'concrete'));
+  const crates = [
+    [7,7],[-7,-7],[-7,7],[7,-7],
+    [-24,-13],[24,13],[-13,-24],[13,24],
+    [-30,-9],[30,9],[-9,-30],[9,30]
+  ];
+  crates.forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'crate'));
 
-  [[10,2],[10.8,3.2],[-9,-18],[21,9],[-18,16],[-30,-24]].forEach(p=>E.addBarrel(p[0],p[1]));
+  [[-3,-4],[3,4],[-17,-11],[17,11],[-11,-17],[11,17],[-23,20],[23,-20]]
+    .forEach(p=>E.addBarrel(p[0],p[1]));
 
-  E.addBox(1,4,18,-22,2,-27,'dark');
-  E.addBox(18,4,1,-22,2,-18,'dark');
-  E.addBox(1,4,22,38,2,22,'dark');
+  // spawn-side warehouse cover, set well back behind the spawn points
+  E.addBuilding(9,6,8,-44,-44,0.2,'building1');
+  E.addBuilding(9,6,8, 44, 44,-0.2,'building2');
 
-  E.addBuilding(11,7,8,44,42,0.15,'building1');
-  E.addBuilding(9,10,7,-44,40,-0.1,'building2');
+  // elevated vantage points, one per side, reachable only via ramp
+  E.addBox(6,3.2,6,-20,1.6,-20,'concrete');
+  E.addRamp({x:-27, z:-27, width:4, length:8, height:3.2, rotY:Math.PI/4});
+  E.addBox(6,3.2,6, 20,1.6, 20,'concrete');
+  E.addRamp({x:27, z:27, width:4, length:8, height:3.2, rotY:Math.PI*1.25});
 
-  E.addBox(17,0.6,15,-33,3,29,'concrete');
-  E.addBox(17,1,0.4,-33,3.9,36.5,'dark',{isFloor:false});
-  E.addBox(17,1,0.4,-33,3.9,21.5,'dark',{isFloor:false});
-  E.addRamp({x:-33, z:16, width:6, length:12, height:3.3, rotY:0});
+  // neutral high-ground contest point
+  E.addElevator(10,-10,4,4,0,3.2,0.45);
 
-  E.addBox(6,3,6,22,1.5,-33,'concrete');
-  E.addRamp({x:22, z:-24.5, width:4, length:8, height:3, rotY:Math.PI});
-
-  E.addElevator(-11,11,4,4,0,3.4,0.5);
-  E.addTower(42,-44);
-  E.addFlag(-44,-2);
+  E.addTower(-42,40);
+  E.addFlag(42,-40);
 
   return {
-    spawnsFFA:[[18,-5],[-18,5],[10,22],[-10,-22],[28,-22],[-28,20],[0,33],[-33,-33],[38,20],[-40,-40]],
-    spawnsA:[[-33,-33],[-28,20],[-18,5],[0,33],[-40,-40]],
-    spawnsB:[[18,-5],[10,22],[28,-22],[38,20],[42,-44]],
-    bombSite:{x:-33,z:29,r:6},
-    ammoCrates:[[0,0],[20,15],[-20,-15],[10,-30]]
+    spawnsFFA:[[-34,-34],[34,34],[-34,34],[34,-34],[0,-32],[0,32],[-32,0],[32,0],[-22,-31],[22,31]],
+    spawnsA:[[-33,-27],[-27,-33],[-33,-33],[-30,-22],[-22,-30]],
+    spawnsB:[[33,27],[27,33],[33,33],[30,22],[22,30]],
+    bombSite:{x:0,z:0,r:6},
+    ammoCrates:[[14,14],[-14,-14],[0,-15],[0,15]]
   };
 }
 
 function desert(E){
-  const rocks = [[10,4,-6],[13,3.4,-8],[-9,3.8,10],[16,4.6,16],[-18,3,-14],[22,3.2,-24],[-24,3.6,20],[0,4.2,26],[-6,3.4,-30],[30,3.8,4]];
-  rocks.forEach(p=>{
-    E.addBox(p[1]*1.3,p[1],p[1]*1.1,p[0],p[1]/2,p[2],'rock',{rotY:Math.random()*Math.PI});
-  });
+  // Symmetric Nuketown-style layout: mirrored bases through the center
+  // (x,z) <-> (-x,-z), open desert with rock/dune cover roughly every 8-10
+  // units, a central compound approachable from two sides, one elevated
+  // watch tower per side placed symmetrically.
 
-  const dunes = [[6,1.2,4],[-8,1,-6],[14,1.4,-16],[-16,1.1,14],[24,1.3,-4],[-26,1.2,-20]];
-  dunes.forEach(p=>E.addBox(3,p[1],3,p[0],p[1]/2,p[2],'sand'));
+  const rocks = [
+    [6,3.4,-6,10,-2],[6,3.6,10,-16,4],[5.6,3.2,-16,16,-9],[6.2,3.8,20,4,7],
+    [5.8,3.4,6,-10,2],[6,3.6,-10,16,-4],[5.6,3.2,16,-16,9],[6.2,3.8,-20,-4,-7],
+    [5,3,-24,24,3],[5,3,24,-24,-3]
+  ];
+  rocks.forEach(p=>E.addBox(p[0],p[1],p[0]*0.9,p[3],p[1]/2,p[4],'rock',{rotY:(p[3]*13+p[4]*7)%3.1}));
 
-  const tents = [[18,1.8,20,0.3],[-20,1.8,-22,-0.4],[30,1.8,-30,0.9]];
-  tents.forEach(p=>E.addBox(5,p[1],5,p[0],p[1]/2,p[2],'tent',{rotY:p[3]}));
+  const dunes = [
+    [4,1.3,6,4],[4,1.1,-6,-4],[3.4,1.4,14,-11],[3.4,1.2,-14,11],
+    [3.6,1.3,22,-2],[3.6,1.3,-22,2],[3,1.1,2,18],[3,1.1,-2,-18]
+  ];
+  dunes.forEach(p=>E.addBox(p[0],p[1],p[0],p[2],p[1]/2,p[3],'sand'));
 
-  [[8,6],[-12,-10],[20,-2],[-6,18]].forEach(p=>E.addBarrel(p[0],p[1]));
+  [[9,5],[-9,-5],[5,-9],[-5,9],[13,-13],[-13,13],[0,-24],[0,24]].forEach(p=>E.addBarrel(p[0],p[1]));
 
-  E.addBox(9,6,9,42,3,40,'sandstone',{rotY:0.2});
-  E.addBox(8,8,8,-42,4,-38,'sandstone',{rotY:-0.15});
+  // mirrored team bases: symmetric small camps facing the compound
+  E.addBuilding(7,4,6,-36,-36,0.25,'sandstone');
+  E.addBuilding(7,4,6, 36, 36,0.25,'sandstone');
+  E.addBox(5,1.8,5,-38,0.9,-26,'tent',{rotY:-0.35});
+  E.addBox(5,1.8,5, 38,0.9, 26,'tent',{rotY:-0.35});
+  E.addBox(5,1.8,5,-26,0.9,-38,'tent',{rotY:0.5});
+  E.addBox(5,1.8,5, 26,0.9, 38,'tent',{rotY:0.5});
 
-  E.addBox(15,0.6,13,28,3,30,'sandstone');
-  E.addRamp({x:28, z:19, width:6, length:12, height:3.3, rotY:0});
+  // central compound (bomb site), approachable from two opposite angles
+  E.addBox(15,0.6,13,0,3,0,'sandstone');
+  E.addRamp({x:-14.5, z:0, width:6, length:7, height:3.3, rotY: Math.PI/2});
+  E.addRamp({x: 14.5, z:0, width:6, length:7, height:3.3, rotY:-Math.PI/2});
+  E.addBox(1,3.6,7,0,1.8,-9.5,'sandstone',{isFloor:false});
+  E.addBox(1,3.6,7,0,1.8, 9.5,'sandstone',{isFloor:false});
 
-  E.addElevator(-10,-2,4,4,0,3.4,0.45);
-  E.addTower(-40,40);
-  E.addFlag(38,-38);
+  // symmetric elevated watch positions, one per side
+  E.addBox(5,3,5,-20,1.5,10,'sandstone');
+  E.addRamp({x:-20, z:16, width:4, length:6, height:3, rotY:Math.PI});
+  E.addBox(5,3,5, 20,1.5,-10,'sandstone');
+  E.addRamp({x: 20, z:-16, width:4, length:6, height:3, rotY:0});
+
+  E.addTower(-38,38);
+  E.addTower(38,-38);
+  E.addFlag(38,38);
 
   return {
-    spawnsFFA:[[20,20],[-20,-20],[30,-30],[-30,30],[0,35],[35,0],[-35,0],[0,-35],[15,-25],[-15,25]],
-    spawnsA:[[-20,-20],[-30,30],[-35,0],[-15,25],[-40,40]],
-    spawnsB:[[20,20],[30,-30],[35,0],[15,-25],[42,40]],
-    bombSite:{x:28,z:30,r:6},
-    ammoCrates:[[0,0],[22,-6],[-22,6],[0,-25]]
+    spawnsFFA:[[-30,-24],[30,24],[-24,-30],[24,30],[-38,-14],[38,14],[-14,-38],[14,38],[0,-38],[0,38]],
+    spawnsA:[[-22,-26],[-26,-22],[-28,-28],[-24,-32],[-32,-24]],
+    spawnsB:[[22,26],[26,22],[28,28],[24,32],[32,24]],
+    bombSite:{x:0,z:0,r:6},
+    ammoCrates:[[13,10],[-13,-10],[10,-13],[-10,13]]
   };
 }
 
 function urban(E){
-  const blocks = [
-    [10,9,12,-18,-18,0,'building1'],
-    [10,10,10,18,-18,0.05,'building2'],
-    [10,8,12,-18,18,-0.05,'building2'],
-    [12,11,10,18,18,0,'building1'],
-    [8,6,8,0,-30,0.1,'building1'],
-    [8,7,8,0,30,-0.1,'building2']
+  // Three-lane vertical map: left alley, center plaza (bomb site), right
+  // alley, connected by cross-alleys for flanking, one rooftop overlooking
+  // the plaza reached by ramp. Team A holds the south block, Team B the
+  // north block.
+
+  // left lane buildings
+  E.addBuilding(8,8,10,-22,-20,0.05,'building1');
+  E.addBuilding(8,9,10,-22, 20,-0.05,'building2');
+  // right lane buildings
+  E.addBuilding(8,9,10, 22,-20,-0.05,'building2');
+  E.addBuilding(8,8,10, 22, 20,0.05,'building1');
+  // plaza-flanking mid buildings (define the center lane / bomb site square)
+  E.addBuilding(7,7,7,-9,-24,0.1,'building1');
+  E.addBuilding(7,7,7, 9,-24,-0.1,'building2');
+  E.addBuilding(7,8,7,-9, 24,-0.1,'building2');
+  E.addBuilding(7,8,7, 9, 24,0.1,'building1');
+
+  // low walls / dumpsters defining alley cover and cross-alley chicanes
+  const barriers = [
+    [2,2.2,6,-22,1.1,-2,'dark',0],
+    [2,2.2,6, 22,1.1, 2,'dark',0],
+    [6,2.2,2,-2,1.1,-22,'dark',0],
+    [6,2.2,2, 2,1.1, 22,'dark',0],
+    [1.6,1.6,4,-13,0.8,-6,'concrete',0.3],
+    [1.6,1.6,4, 13,0.8, 6,'concrete',0.3],
+    [1.6,1.6,4,-6,0.8, 13,'concrete',-0.3],
+    [1.6,1.6,4, 6,0.8,-13,'concrete',-0.3]
   ];
-  blocks.forEach(b=>E.addBuilding(b[0],b[1],b[2],b[3],b[4],b[5],b[6]));
+  barriers.forEach(p=>E.addBox(p[0],p[1],p[2],p[3],p[4],p[5],p[6],{rotY:p[7]}));
 
-  const crates = [[6,0],[0,10],[-6,0],[0,-10],[10,10],[-10,-10],[10,-10],[-10,10]];
-  crates.forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'concrete'));
+  const crates = [[5,5],[-5,-5],[5,-5],[-5,5],[-16,0],[16,0],[0,-16],[0,16]];
+  crates.forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'crate'));
 
-  [[4,4],[-4,-4],[4,-4],[-4,4]].forEach(p=>E.addBarrel(p[0],p[1]));
+  [[3,10],[-3,-10],[10,-3],[-10,3],[-22,0],[22,0]].forEach(p=>E.addBarrel(p[0],p[1]));
 
-  E.addBox(2,3,10,-9,1.5,0,'dark');
-  E.addBox(2,3,10,9,1.5,0,'dark');
-  E.addBox(10,3,2,0,1.5,-9,'dark');
-  E.addBox(10,3,2,0,1.5,9,'dark');
+  // plaza center dressing (bomb site) - light cover, no sightline blockers
+  E.addBox(1.4,1,1.4,3,0.5,3,'crate');
+  E.addBox(1.4,1,1.4,-3,0.5,-3,'crate');
+  E.addBarrel(-3,3);
+  E.addBarrel(3,-3);
 
-  E.addBox(13,0.6,11,18,3,-18,'concrete');
-  E.addRamp({x:18, z:-11.5, width:5, length:9, height:3.3, rotY:0});
+  // rooftop overlooking the plaza, reached by ramp from the left lane
+  E.addBox(6,3.4,6,-9,1.7,-9,'concrete');
+  E.addRamp({x:-13.5, z:-13.5, width:4, length:6.4, height:3.4, rotY:Math.PI/4});
 
-  E.addElevator(0,0,4,4,0,3.6,0.4);
-  E.addTower(-36,-36);
-  E.addFlag(36,36);
+  E.addElevator(13,13,4,4,0,3.2,0.4);
+  E.addTower(-32,-32);
+  E.addFlag(32,32);
 
   return {
-    spawnsFFA:[[22,22],[-22,-22],[22,-22],[-22,22],[30,0],[-30,0],[0,30],[0,-30],[14,0],[-14,0]],
-    spawnsA:[[-22,-22],[-30,0],[0,-30],[-14,0],[-36,-36]],
-    spawnsB:[[22,22],[30,0],[0,30],[14,0],[36,36]],
-    bombSite:{x:18,z:-18,r:6},
-    ammoCrates:[[0,0],[20,20],[-20,-20],[24,-6]]
+    spawnsFFA:[[-22,-32],[22,32],[22,-32],[-22,32],[-32,-8],[32,8],[-32,8],[32,-8],[0,-34],[0,34]],
+    spawnsA:[[-22,-32],[22,-32],[-32,-22],[32,-22],[0,-34]],
+    spawnsB:[[-22,32],[22,32],[-32,22],[32,22],[0,34]],
+    bombSite:{x:0,z:0,r:6},
+    ammoCrates:[[-16,-16],[16,16],[16,-16],[-16,16]]
   };
 }
 
 GW.MAPS = [
-  { id:'industrial', name:'DISTRITO INDUSTRIAL', desc:'Contenedores, rampas y una torre de radar en un patio industrial abierto.',
+  { id:'industrial', name:'DISTRITO INDUSTRIAL', desc:'Laberinto denso de contenedores con lineas de combate cortas y una torre de radar.',
     size:100, groundColor:'#5c6650', fogColor:0x93a186, fogDensity:0.011,
     skyColors:['#4d6f96','#8fa8a0','#c9c9a0','#8a7a5c'], build:industrial },
-  { id:'desert', name:'ZONA DESÉRTICA', desc:'Rocas, dunas y campamentos bajo el sol — largas líneas de tiro para francotiradores.',
+  { id:'desert', name:'ZONA DESÉRTICA', desc:'Bases espejadas separadas por dunas y rocas, con un complejo central disputado.',
     size:100, groundColor:'#a9895c', fogColor:0xcbb383, fogDensity:0.009,
     skyColors:['#7f9fc4','#cfc79a','#e2c98f','#b98f57'], build:desert },
-  { id:'urban', name:'COMPLEJO URBANO', desc:'Bloques de edificios y callejones estrechos — combate cerrado, ideal para escopeta.',
+  { id:'urban', name:'COMPLEJO URBANO', desc:'Tres carriles verticales entre bloques de edificios convergen en una plaza central.',
     size:95, groundColor:'#6a6a62', fogColor:0x8b8b83, fogDensity:0.014,
     skyColors:['#42566e','#6f7a78','#a3a294','#6f6455'], build:urban }
 ];

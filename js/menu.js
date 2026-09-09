@@ -3,7 +3,10 @@ GW.menuHooks = GW.menuHooks || {};
 
 (function(){
 
-const cfg = { modeId:'ffa', mapId:'industrial', botCount:8, difficulty:'normal', primaryWeapon:'rifle' };
+const cfg = {
+  modeId:'ffa', mapId:'industrial', botCount:8, difficulty:'normal', primaryWeapon:'rifle',
+  sensitivity:1.0, masterVolume:70, timeLimitMin:8, friendlyFire:false, invertY:false
+};
 let matchEndShown = false;
 
 const el = id => document.getElementById(id);
@@ -47,9 +50,32 @@ function renderBotCount(){
   el('botCountRange').value = cfg.botCount;
   el('botCountVal').textContent = cfg.botCount;
 }
+function renderSensitivity(){
+  el('sensitivityRange').value = cfg.sensitivity;
+  el('sensitivityVal').textContent = cfg.sensitivity.toFixed(2)+'x';
+}
+function renderVolume(){
+  el('volumeRange').value = cfg.masterVolume;
+  el('volumeVal').textContent = cfg.masterVolume+'%';
+}
+function renderTimeLimit(){
+  el('timeLimitRange').value = cfg.timeLimitMin;
+  el('timeLimitVal').textContent = cfg.timeLimitMin+' min';
+}
+function renderFriendlyFire(){
+  el('friendlyFireButtons').querySelectorAll('.dbtn').forEach(b=>{
+    b.classList.toggle('active', (b.dataset.val==='on')===cfg.friendlyFire);
+  });
+}
+function renderInvertY(){
+  el('invertYButtons').querySelectorAll('.dbtn').forEach(b=>{
+    b.classList.toggle('active', (b.dataset.val==='on')===cfg.invertY);
+  });
+}
 
 function renderSetup(){
   renderModeList(); renderMapList(); renderWeaponList(); renderDifficulty(); renderBotCount();
+  renderSensitivity(); renderVolume(); renderTimeLimit(); renderFriendlyFire(); renderInvertY();
 }
 
 el('modeList').addEventListener('click', (e)=>{
@@ -80,6 +106,31 @@ el('botCountRange').addEventListener('input', (e)=>{
   cfg.botCount = parseInt(e.target.value,10);
   el('botCountVal').textContent = cfg.botCount;
 });
+el('sensitivityRange').addEventListener('input', (e)=>{
+  cfg.sensitivity = parseFloat(e.target.value);
+  el('sensitivityVal').textContent = cfg.sensitivity.toFixed(2)+'x';
+});
+el('volumeRange').addEventListener('input', (e)=>{
+  cfg.masterVolume = parseInt(e.target.value,10);
+  el('volumeVal').textContent = cfg.masterVolume+'%';
+  GW.Audio.setVolume(cfg.masterVolume/100);
+});
+el('timeLimitRange').addEventListener('input', (e)=>{
+  cfg.timeLimitMin = parseInt(e.target.value,10);
+  el('timeLimitVal').textContent = cfg.timeLimitMin+' min';
+});
+el('friendlyFireButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.dbtn'); if(!btn) return;
+  cfg.friendlyFire = btn.dataset.val==='on';
+  GW.Audio.playUIClick();
+  renderFriendlyFire();
+});
+el('invertYButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.dbtn'); if(!btn) return;
+  cfg.invertY = btn.dataset.val==='on';
+  GW.Audio.playUIClick();
+  renderInvertY();
+});
 
 /* ---------------- Navigation ---------------- */
 el('btnPlay').addEventListener('click', ()=>{
@@ -100,6 +151,7 @@ function startMatchFlow(){
   matchEndShown = false;
   hidePauseMenu(); hideMatchEnd();
   setInMatchUI(true);
+  GW.Audio.setVolume(cfg.masterVolume/100);
   GW.engine.startMatch(cfg);
   showPlayPrompt('HAZ CLIC PARA JUGAR');
 }

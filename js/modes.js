@@ -9,7 +9,9 @@ GW.MODE_META = [
   { id:'snd', name:'BÚSQUEDA Y DESTRUCCIÓN', short:'S&D', teams:true,
     desc:'Rondas a vida única. Los atacantes deben plantar y detonar el explosivo; los defensores deben impedirlo o desactivarlo.' },
   { id:'gungame', name:'MODO ARSENAL', short:'ARSENAL', teams:false,
-    desc:'Cada baja te asciende a la siguiente arma. Completa la escalera de armas antes que se acabe el tiempo.' }
+    desc:'Cada baja te asciende a la siguiente arma. Completa la escalera de armas antes que se acabe el tiempo.' },
+  { id:'horde', name:'MODO HORDA', short:'HORDA', teams:false,
+    desc:'Oleadas de enemigos cada vez más numerosas y letales. Sobrevive y suma el mayor número de bajas posible.' }
 ];
 
 GW.MODE_FACTORIES = {};
@@ -35,7 +37,7 @@ GW.MODE_FACTORIES.ffa = function(){
     const E = GW.engine;
     E.player.team = 'A';
     E.bots.forEach(b=>b.team='B');
-    c.state = { scoreLimit: 12 + E.config.botCount, timeLeft: 480, botKills:{} };
+    c.state = { scoreLimit: 12 + E.config.botCount, timeLeft: (E.config.timeLimitMin||8)*60, botKills:{} };
     E.setModeHud();
   };
   c.update = function(dt){
@@ -65,7 +67,7 @@ GW.MODE_FACTORIES.tdm = function(){
     E.player.team = 'A';
     const half = Math.floor(E.bots.length/2);
     E.bots.forEach((b,i)=>{ b.team = i<half ? 'A' : 'B'; });
-    c.state = { scoreA:1, scoreB:0, scoreLimit: 10 + E.config.botCount, timeLeft: 480 };
+    c.state = { scoreA:1, scoreB:0, scoreLimit: 10 + E.config.botCount, timeLeft: (E.config.timeLimitMin||8)*60 };
     E.setModeHud();
   };
   c.update = function(dt){
@@ -116,6 +118,7 @@ GW.MODE_FACTORIES.snd = function(){
     c.state.plantProgress = 0; c.state.defuseProgress = 0;
     E.respawnAllForRound();
     E.clearInteractPrompt();
+    if(E.isPointerLocked()) E.frozen = false; // do not un-pause if the player paused during the round transition
     const atkLabel = c.state.attackTeam==='A' ? 'ATACAS' : 'DEFIENDES';
     E.showBanner(`RONDA ${c.state.round}`, atkLabel, 2000);
   }
@@ -126,6 +129,7 @@ GW.MODE_FACTORIES.snd = function(){
     c.state.phase = 'roundEnd';
     if(winnerTeam==='A') c.state.winsA++; else c.state.winsB++;
     E.clearInteractPrompt();
+    E.frozen = true; // freeze combat between rounds without exiting pointer lock / opening the pause menu
     const winLabel = winnerTeam===E.player.team ? 'RONDA GANADA' : 'RONDA PERDIDA';
     E.showBanner(winLabel, `${c.state.winsA} - ${c.state.winsB}`, 2300);
     GW.menuHooks.onRoundEnd({winnerTeam, winsA:c.state.winsA, winsB:c.state.winsB});
@@ -213,12 +217,12 @@ GW.MODE_FACTORIES.snd = function(){
 GW.MODE_FACTORIES.gungame = function(){
   const c = baseController();
   c.allowRespawn = true;
-  const LADDER = ['pistol','shotgun','rifle','sniper'];
+  const LADDER = ['pistol','smg','shotgun','rifle','dmr','sniper'];
   c.init = function(){
     const E = GW.engine;
     E.player.team = 'A';
     E.bots.forEach(b=>b.team='B');
-    c.state = { tier:0, timeLeft:480 };
+    c.state = { tier:0, timeLeft:(E.config.timeLimitMin||8)*60 };
     E.setForcedWeapon(LADDER[0]);
     E.setModeHud();
   };
@@ -246,6 +250,73 @@ GW.MODE_FACTORIES.gungame = function(){
       }
     }
   };
+  return c;
+};
+
+/* ---------------------------- HORDE / SURVIVAL ---------------------------- */
+GW.MODE_FACTORIES.horde = function(){
+  const c = baseController();
+  c.allowRespawn = true;
+  c.allowBotRespawn = false; // wave logic manages bot lifecycle explicitly, not per-bot auto-respawn
+  const MAX_BOTS = 20;
+
+  c.init = function(){
+    const E = GW.engine;
+    E.player.team = 'A';
+    E.bots.forEach(b=>b.team='B');
+    c.state = { wave:0, waveTransition:false, timeLeft:(E.config.timeLimitMin||8)*60 };
+    E.setModeHud();
+    startWave();
+  };
+
+  function startWave(){
+    const E = GW.engine;
+    const st = c.state;
+    st.wave++;
+    st.waveTransition = false;
+    const targetCount = Math.min(MAX_BOTS, E.config.botCount + (st.wave-1)*2);
+    E.bots.forEach(b=>GW.Bots.respawn(b));
+    while(E.bots.length < targetCount){
+      const b = GW.Bots.create('B', E.config.difficulty, E.mapData.spawnsFFA);
+      E.bots.push(b);
+    }
+    const healthMul = Math.min(2.2, 1 + (st.wave-1)*0.09);
+    const speedMul = Math.min(1.5, 1 + (st.wave-1)*0.045);
+    E.bots.forEach(b=>{
+      b.maxHealth = 100*b.difficulty.healthMul*healthMul;
+      b.health = b.maxHealth;
+      b.speed = 2.2*b.difficulty.speedMul*speedMul;
+      b.runSpeed = 3.7*b.difficulty.speedMul*speedMul;
+    });
+    E.showBanner('OLEADA '+st.wave, `${E.bots.length} enemigos`, 2200);
+    GW.Audio.playChord(true);
+  }
+
+  c.update = function(dt){
+    const E = GW.engine;
+    const st = c.state;
+    st.timeLeft -= dt;
+
+    if(!st.waveTransition && E.bots.length>0 && E.bots.every(b=>!b.alive)){
+      st.waveTransition = true;
+      const myMatchId = E.matchId;
+      setTimeout(()=>{
+        if(E.matchId !== myMatchId) return;
+        startWave();
+      }, 2000);
+    }
+
+    E.setModeHud(`<div class="mh-row"><span>OLEADA</span><b>${st.wave}</b></div>
+      <div class="mh-row"><span>BAJAS</span><b>${E.player.kills}</b></div>
+      <div class="mh-time">${formatTime(Math.max(0,st.timeLeft))}</div>`);
+
+    if(st.timeLeft<=0){
+      GW.menuHooks.onMatchEnd({title:'FIN DE LA HORDA', sub:`Sobreviviste ${st.wave} oleadas · ${E.player.kills} bajas`, kills:E.player.kills, deaths:E.player.deaths});
+      E.freeze();
+    }
+  };
+
+  c.onCombatantKilled = function(){};
   return c;
 };
 

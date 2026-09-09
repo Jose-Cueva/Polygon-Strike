@@ -8,15 +8,19 @@ GW.Bots = (function(){
   };
 
   const DIFFICULTY = {
-    facil:   { healthMul:0.75, speedMul:0.85, accuracyMul:0.55, reactionMs:1400, dmgMul:0.7,  fovMul:0.85 },
-    normal:  { healthMul:1.0,  speedMul:1.0,  accuracyMul:0.85, reactionMs:1000, dmgMul:1.0,  fovMul:1.0  },
-    dificil: { healthMul:1.3,  speedMul:1.15, accuracyMul:1.15, reactionMs:650,  dmgMul:1.3,  fovMul:1.2  }
+    facil:   { healthMul:0.75, speedMul:0.85, accuracyMul:0.55, reactionMs:1400, dmgMul:0.7,  fovMul:0.85, searchMul:0.5 },
+    normal:  { healthMul:1.0,  speedMul:1.0,  accuracyMul:0.85, reactionMs:1000, dmgMul:1.0,  fovMul:1.0,  searchMul:1.0 },
+    dificil: { healthMul:1.3,  speedMul:1.15, accuracyMul:1.15, reactionMs:650,  dmgMul:1.3,  fovMul:1.2,  searchMul:1.6 }
   };
 
   const gunMat = new THREE.MeshStandardMaterial({color:0x1c1e1a, roughness:0.4, metalness:0.7});
+  // Shared dark tactical-hardware material for boots and helmet trim (not team-tinted).
+  const hardwareMat = new THREE.MeshStandardMaterial({color:0x201d18, roughness:0.85, metalness:0.1});
   const FOV_ANGLE_BASE = Math.PI*0.32;
   const DETECT_RANGE = 30;
   const ATTACK_RANGE = 22;
+  const SEARCH_BASE_DURATION = 3.0; // seconds spent investigating the last-known position before giving up
+  const BOT_RADIUS = 0.42;
 
   function spawnPoint(list){
     const s = list[Math.floor(Math.random()*list.length)];
@@ -31,30 +35,56 @@ GW.Bots = (function(){
     const bodyMat = new THREE.MeshStandardMaterial({color:bodyColor, roughness:0.7, metalness:0.1});
     bodyMat.userData.base = bodyColor;
     const headMat = new THREE.MeshStandardMaterial({color:0xc79a72, roughness:0.8});
+    const teamAccent = team==='A' ? 0x274462 : (team==='B' ? 0x622424 : 0x33352a);
 
     const group = new THREE.Group();
     const torsoPivot = new THREE.Group(); torsoPivot.position.y=1.15; group.add(torsoPivot);
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.7,0.3), bodyMat);
     torso.castShadow=true; torsoPivot.add(torso);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.28,0.3,0.28), headMat);
+
+    // Tactical vest plate: slightly larger than the torso, layered over its front face,
+    // tinted with the team color (blue/red/olive) for at-a-glance team readability.
+    const vestMat = new THREE.MeshStandardMaterial({color: teamAccent, roughness:0.55, metalness:0.15});
+    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.56,0.46,0.14), vestMat);
+    vest.position.set(0,0.05,-0.19);
+    vest.castShadow = true;
+    torso.add(vest);
+
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.32,0.3), headMat);
     head.position.y=0.53; head.castShadow=true; torsoPivot.add(head);
 
-    const capMat = new THREE.MeshStandardMaterial({color: team==='A'?0x274462:(team==='B'?0x622424:0x33352a), roughness:0.6});
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.08,0.3), capMat);
-    cap.position.y = 0.53+0.19; torsoPivot.add(cap);
+    // Helmet-like cap: slightly taller/domed than the old flat plate, plus a small
+    // non-overlapping brim/visor for silhouette without touching the head hitbox.
+    const capMat = new THREE.MeshStandardMaterial({color: teamAccent, roughness:0.6});
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.32,0.12,0.32), capMat);
+    cap.position.y = 0.75; cap.castShadow = true; torsoPivot.add(cap);
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.05,0.08), hardwareMat);
+    brim.position.set(0,-0.02,-0.19);
+    brim.castShadow = true;
+    cap.add(brim);
 
     const legL = new THREE.Group(); legL.position.set(-0.14,0.8,0);
     const legLMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.8,0.2), bodyMat); legLMesh.position.y=-0.4; legLMesh.castShadow=true;
+    // Boot: darker short box at the bottom of the leg mesh; cloned onto the right leg below.
+    const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.18,0.26), hardwareMat);
+    bootL.position.set(0,-0.33,-0.02); bootL.castShadow=true;
+    legLMesh.add(bootL);
     legL.add(legLMesh); group.add(legL);
     const legR = new THREE.Group(); legR.position.set(0.14,0.8,0);
     const legRMesh = legLMesh.clone(); legRMesh.position.y=-0.4;
+    const bootR = legRMesh.children[0];
     legR.add(legRMesh); group.add(legR);
 
     const armL = new THREE.Group(); armL.position.set(-0.36,1.45,0);
     const armLMesh = new THREE.Mesh(new THREE.BoxGeometry(0.16,0.6,0.16), bodyMat); armLMesh.position.y=-0.3; armLMesh.castShadow=true;
+    // Hand: small skin-toned box at the outer (lower) end of the arm mesh; cloned onto the right arm below.
+    const handL = new THREE.Mesh(new THREE.BoxGeometry(0.17,0.15,0.18), headMat);
+    handL.position.set(0,-0.28,-0.02); handL.castShadow=true;
+    armLMesh.add(handL);
     armL.add(armLMesh); group.add(armL);
     const armR = new THREE.Group(); armR.position.set(0.36,1.45,0);
     const armRMesh = armLMesh.clone(); armRMesh.position.y=-0.3;
+    const handR = armRMesh.children[0];
     armR.add(armRMesh); group.add(armR);
 
     const gun = new THREE.Mesh(new THREE.BoxGeometry(0.08,0.08,0.55), gunMat);
@@ -78,6 +108,9 @@ GW.Bots = (function(){
       speed:2.2*diff.speedMul, runSpeed:3.7*diff.speedMul,
       facing:0, hitFlash:0, walkCycle:Math.random()*10,
       targetScanTimer:Math.random()*0.3, currentTarget:null,
+      lastKnownPos:new THREE.Vector3(), searchTimer:0,
+      flankSide:(Math.random()<0.5?-1:1), flankBias:new THREE.Vector3(),
+      stuckCheckTimer:1.5+Math.random()*0.5, stuckCheckPos:spawn.clone(),
       spawnList,
     };
     bot.waypoints = [
@@ -85,7 +118,7 @@ GW.Bots = (function(){
       new THREE.Vector3(spawn.x + (Math.random()*10-5), 0, spawn.z + (Math.random()*10-5)),
       new THREE.Vector3(spawn.x + (Math.random()*10-5), 0, spawn.z + (Math.random()*10-5)),
     ];
-    bot.allMeshes = [torso,head,legLMesh,legRMesh,armLMesh,armRMesh,gun];
+    bot.allMeshes = [torso,vest,head,cap,brim,legLMesh,legRMesh,armLMesh,armRMesh,gun,bootL,bootR,handL,handR];
     bot.allMeshes.forEach(m=>{ m.userData.bot = bot; });
     return bot;
   }
@@ -97,6 +130,9 @@ GW.Bots = (function(){
     bot.alive = true;
     bot.state = 'patrol';
     bot.currentTarget = null;
+    bot.searchTimer = 0;
+    bot.stuckCheckPos.copy(spawn);
+    bot.stuckCheckTimer = 1.5 + Math.random()*0.5;
     bot.group.visible = true;
     bot.group.rotation.set(0,0,0);
     bot.group.position.set(spawn.x,0,spawn.z);
@@ -144,6 +180,35 @@ GW.Bots = (function(){
     return best;
   }
 
+  // Counts alive teammates already engaging the same target as `bot`, so a
+  // second/third bot arriving at a fight can bias its approach to the side
+  // instead of stacking on the exact same line as the first responder.
+  function countTeammatesOnSameTarget(bot){
+    if(!bot.currentTarget) return 0;
+    const E = GW.engine;
+    let count = 0;
+    E.bots.forEach(other=>{
+      if(other===bot || !other.alive || other.team!==bot.team) return;
+      const ot = other.currentTarget;
+      if(!ot || ot.kind!==bot.currentTarget.kind) return;
+      if(bot.currentTarget.kind==='player' || ot.ref===bot.currentTarget.ref) count++;
+    });
+    return count;
+  }
+
+  // Recomputes the lateral flank offset applied while chasing, based on how
+  // many teammates are already on the same target. Cheap O(bots) team scan,
+  // so it is only called from the throttled target-rescan below, not per frame.
+  function updateFlankBias(bot){
+    const engaging = countTeammatesOnSameTarget(bot);
+    if(engaging <= 0){ bot.flankBias.set(0,0,0); return; }
+    const toTarget = new THREE.Vector3().subVectors(bot.currentTarget.pos, bot.group.position);
+    toTarget.y = 0;
+    if(toTarget.lengthSq() < 0.01){ bot.flankBias.set(0,0,0); return; }
+    const perp = new THREE.Vector3(-toTarget.z, 0, toTarget.x).normalize();
+    bot.flankBias.copy(perp).multiplyScalar(bot.flankSide * Math.min(7, 2.5 + engaging*1.5));
+  }
+
   function update(bot, dt){
     const E = GW.engine;
     if(!bot.alive){
@@ -154,7 +219,7 @@ GW.Bots = (function(){
         bot.group.position.y = -0.3*t;
       } else if(bot.deathTimer > 2.2 && bot.group.visible){
         bot.group.visible = false;
-      } else if(E.allowRespawn && bot.deathTimer > 3.4){
+      } else if(E.allowBotRespawn && bot.deathTimer > 3.4){
         respawn(bot);
       }
       return;
@@ -169,6 +234,7 @@ GW.Bots = (function(){
     if(bot.targetScanTimer <= 0){
       bot.currentTarget = pickTarget(bot);
       bot.targetScanTimer = 0.22 + Math.random()*0.16;
+      updateFlankBias(bot);
     } else if(bot.currentTarget){
       if(bot.currentTarget.kind==='bot' && !bot.currentTarget.ref.alive){ bot.currentTarget = null; }
       else if(bot.currentTarget.kind==='player' && !E.player.alive){ bot.currentTarget = null; }
@@ -183,8 +249,19 @@ GW.Bots = (function(){
       const eyePos = new THREE.Vector3(); bot.head.getWorldPosition(eyePos);
       dist = eyePos.distanceTo(target.pos);
       bot.state = (dist < ATTACK_RANGE) ? 'attack' : 'chase';
+      bot.lastKnownPos.copy(target.pos);
+      bot.searchTimer = 0;
     } else if(bot.state==='attack' || bot.state==='chase'){
-      bot.state = 'patrol';
+      // Target lost: investigate its last known position for a bit instead
+      // of instantly giving up — tougher difficulties search longer.
+      bot.state = 'search';
+      bot.searchTimer = SEARCH_BASE_DURATION * bot.difficulty.searchMul;
+      bot.flankBias.set(0,0,0);
+    } else if(bot.state==='search'){
+      bot.searchTimer -= dt;
+      if(bot.searchTimer <= 0 || bot.group.position.distanceTo(bot.lastKnownPos) < 1.5){
+        bot.state = 'patrol';
+      }
     }
 
     const moveTarget = new THREE.Vector3();
@@ -197,9 +274,24 @@ GW.Bots = (function(){
       if(bot.group.position.distanceTo(wp) < 1){
         bot.wpIndex = (bot.wpIndex+1)%bot.waypoints.length;
       }
+      // Stuck detection: an obstacle may block a straight line to this
+      // waypoint entirely — if barely any progress is made for a while,
+      // give up on it rather than push against the wall forever.
+      bot.stuckCheckTimer -= dt;
+      if(bot.stuckCheckTimer <= 0){
+        if(bot.group.position.distanceTo(bot.stuckCheckPos) < 0.8){
+          bot.wpIndex = (bot.wpIndex+1)%bot.waypoints.length;
+        }
+        bot.stuckCheckPos.copy(bot.group.position);
+        bot.stuckCheckTimer = 1.5 + Math.random()*0.5;
+      }
     } else if(bot.state==='chase'){
       moveTarget.copy(target.pos); moveTarget.y=0;
+      moveTarget.add(bot.flankBias);
       speed = bot.runSpeed;
+    } else if(bot.state==='search'){
+      moveTarget.copy(bot.lastKnownPos);
+      speed = bot.speed;
     } else if(bot.state==='attack'){
       moveTarget.copy(bot.group.position);
       const toTarget = new THREE.Vector3().subVectors(target.pos, bot.group.position);
@@ -222,14 +314,16 @@ GW.Bots = (function(){
       }
     }
 
-    if(bot.state==='patrol' || bot.state==='chase'){
+    if(bot.state==='patrol' || bot.state==='chase' || bot.state==='search'){
       const dir = new THREE.Vector3().subVectors(moveTarget, bot.group.position);
       dir.y=0;
       if(dir.length()>0.2){
         dir.normalize();
         bot.facing = Math.atan2(dir.x, dir.z);
-        bot.group.position.x += dir.x*speed*dt;
-        bot.group.position.z += dir.z*speed*dt;
+        const posObj = { x: bot.group.position.x + dir.x*speed*dt, z: bot.group.position.z + dir.z*speed*dt };
+        E.resolveHorizontalCollision(posObj, bot.group.position.y, BOT_RADIUS);
+        bot.group.position.x = posObj.x;
+        bot.group.position.z = posObj.z;
         moving = true;
       }
       bot.armR.rotation.x = THREE.MathUtils.lerp(bot.armR.rotation.x, 0, Math.min(1,dt*6));
@@ -253,6 +347,7 @@ GW.Bots = (function(){
     bot.group.position.y = E.raycastGroundY(bot.group.position.x, bot.group.position.z);
     bot.group.rotation.y = bot.facing;
     bot.pos.copy(bot.group.position);
+    bot.group.updateMatrixWorld(true);
   }
 
   function damage(bot, dmg){

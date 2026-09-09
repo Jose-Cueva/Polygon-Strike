@@ -25,8 +25,8 @@ window.addEventListener('resize', ()=>{
 const E = {
   scene, camera, renderer,
   obstacles:[], floors:[], raycastTargets:[], dynamicObjects:[], mapObjects:[], ammoCrates:[],
-  bots:[], mapData:null, mapDef:null, config:null, mode:null, allowRespawn:true,
-  frozen:true, matchActive:false, matchId:0,
+  bots:[], mapData:null, mapDef:null, config:null, mode:null, allowRespawn:true, allowBotRespawn:true,
+  frozen:true, matchActive:false, matchId:0, _freezeExitsLock:false,
   keys:{}, weaponStates:{}, loadout:['rifle','pistol'], currentSlot:0, switchLocked:false,
   player:{ team:'A', health:100, maxHealth:100, kills:0, deaths:0, alive:true, lastDamageTime:-99999 },
 };
@@ -322,6 +322,9 @@ E.playerRig = playerRig;
 const STAND_HEIGHT=1.7, CROUCH_HEIGHT=1.0, PLAYER_RADIUS=0.45;
 let currentEyeHeight = STAND_HEIGHT;
 let feetY=0, verticalVelocity=0, grounded=true, jumpRequested=false;
+const DODGE_COOLDOWN = 0.9, DODGE_DURATION = 0.22, DODGE_SPEED = 11.5;
+let dodgeCooldown = 0, dodgeTimer = 0;
+const dodgeDir = new THREE.Vector3();
 let yaw=0, pitch=0, recoilPitch=0;
 
 function raycastGroundY(x,z){
@@ -331,7 +334,12 @@ function raycastGroundY(x,z){
 }
 E.raycastGroundY = raycastGroundY;
 
-function resolveHorizontalCollision(pos, feet){
+function resolveHorizontalCollision(pos, feet, radius){
+  radius = radius===undefined ? PLAYER_RADIUS : radius;
+  // Two passes: a single sweep can push the player/bot out of one obstacle
+  // and slightly into a second one (e.g. two walls meeting in a corner) —
+  // a second pass catches that instead of leaving a tiny snag/jitter there.
+  for(let pass=0;pass<2;pass++){
   for(let i=0;i<E.obstacles.length;i++){
     const box3 = E.obstacles[i].box3;
     if(feet >= box3.max.y - 0.05) continue;
@@ -339,15 +347,22 @@ function resolveHorizontalCollision(pos, feet){
     const cz = Math.max(box3.min.z, Math.min(pos.z, box3.max.z));
     const dx = pos.x-cx, dz = pos.z-cz;
     const distSq = dx*dx+dz*dz;
-    if(distSq < PLAYER_RADIUS*PLAYER_RADIUS){
+    if(distSq < radius*radius){
       const dist = Math.sqrt(distSq) || 0.0001;
-      const overlap = PLAYER_RADIUS-dist;
+      const overlap = radius-dist;
       pos.x += (dx/dist)*overlap; pos.z += (dz/dist)*overlap;
     }
   }
+  }
 }
+E.resolveHorizontalCollision = resolveHorizontalCollision;
 
 const raycaster = new THREE.Raycaster();
+function isValidPlayerTarget(bot){
+  if(!bot.alive) return false;
+  if(E.config && E.config.friendlyFire) return true;
+  return GW.Bots.hostile(E.player.team, bot.team);
+}
 E.hasLOS = function(fromPos, toPos){
   const dir = new THREE.Vector3().subVectors(toPos, fromPos);
   const dist = dir.length(); dir.normalize();
@@ -365,7 +380,71 @@ const flashMat = new THREE.MeshBasicMaterial({color:0xffdd88, transparent:true, 
 const flashMesh = new THREE.Mesh(flashGeo, flashMat);
 flashMesh.rotation.x = -Math.PI/2;
 weaponMount.add(flashLight, flashMesh);
-let flashTimer=0, weaponKick=0;
+let flashTimer=0, weaponKick=0, lastShotAt=-9999;
+
+/* Melee (knife) */
+const knifeModel = (function(){
+  const g = new THREE.Group();
+  const handleMat = new THREE.MeshStandardMaterial({color:0x2a2018, roughness:0.7, metalness:0.1});
+  const bladeMat = new THREE.MeshStandardMaterial({color:0xc9d0d4, roughness:0.25, metalness:0.9});
+  const guardMat = new THREE.MeshStandardMaterial({color:0x333333, roughness:0.4, metalness:0.7});
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.035,0.035,0.16), handleMat); handle.position.set(0,0,0.08);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.09,0.02,0.02), guardMat); guard.position.set(0,0,-0.01);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.018,0.006,0.22), bladeMat); blade.position.set(0,0,-0.13);
+  const bladeTip = new THREE.Mesh(new THREE.ConeGeometry(0.013,0.05,4), bladeMat);
+  bladeTip.rotation.x = -Math.PI/2; bladeTip.rotation.z = Math.PI/4; bladeTip.position.set(0,0,-0.245);
+  g.add(handle,guard,blade,bladeTip);
+  g.visible = false;
+  return g;
+})();
+weaponMount.add(knifeModel);
+const MELEE_RANGE = 2.3, MELEE_COOLDOWN = 0.65, MELEE_DURATION = 0.32;
+let meleeCooldown=0, meleeActive=false, meleeTimer=0, meleeRequested=false;
+
+function performMelee(){
+  if(!E.player.alive || meleeCooldown>0 || meleeActive) return;
+  meleeCooldown = MELEE_COOLDOWN;
+  meleeActive = true; meleeTimer = 0;
+  weaponModel.visible = false;
+  knifeModel.visible = true;
+  knifeModel.position.set(0.16,-0.14,-0.28);
+  knifeModel.rotation.set(0,0,0.4);
+
+  const origin = new THREE.Vector3(); camera.getWorldPosition(origin);
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+  const targets = [];
+  E.bots.forEach(b=>{ if(isValidPlayerTarget(b)) targets.push(...b.allMeshes); });
+  raycaster.set(origin, dir); raycaster.far = MELEE_RANGE;
+  const hits = raycaster.intersectObjects(targets.concat(E.raycastTargets), false);
+  setTimeout(()=>{
+    if(!E.matchActive) return;
+    GW.Audio.playMelee();
+    if(hits.length>0){
+      const bot = hits[0].object.userData.bot;
+      if(bot && bot.alive){
+        GW.Audio.playHitmarker();
+        if(GW.Effects) GW.Effects.spawnMeleeSlash(hits[0].point);
+        const died = GW.Bots.damage(bot, 9999);
+        if(died) killBot(bot, 'player', null, true);
+      }
+    }
+  }, 120);
+}
+
+function updateMelee(dt){
+  if(!meleeActive) return;
+  meleeTimer += dt;
+  const t = meleeTimer/MELEE_DURATION;
+  if(t>=1){
+    meleeActive=false;
+    knifeModel.visible=false;
+    weaponModel.visible=true;
+    return;
+  }
+  const swing = Math.sin(Math.min(1,t)*Math.PI);
+  knifeModel.position.set(0.16-swing*0.28, -0.14+swing*0.05, -0.28-swing*0.18);
+  knifeModel.rotation.set(swing*0.5, -swing*0.6, 0.4-swing*0.9);
+}
 
 const REST_POS = new THREE.Vector3(), ADS_POS = new THREE.Vector3();
 const weaponState = { reloading:false, reloadTimer:0, isADS:false, adsAmount:0, fireCooldown:0 };
@@ -388,7 +467,7 @@ function rebuildWeaponModel(){
 
 let switching=false, switchTimer=0, switchDuration=0.3, switchSwapped=false;
 function selectSlot(slot){
-  if(E.frozen || E.switchLocked || slot===E.currentSlot || switching) return;
+  if(E.frozen || E.switchLocked || slot===E.currentSlot || switching || meleeActive) return;
   switching=true; switchTimer=0; switchSwapped=false;
   E._pendingSlot = slot;
   weaponState.reloading=false;
@@ -428,7 +507,7 @@ function spawnTracer(start,end){
 let hitmarkerTimer=0, vignetteFlash=0;
 
 function startReload(){
-  if(weaponState.reloading || switching || E.frozen) return;
+  if(weaponState.reloading || switching || E.frozen || meleeActive) return;
   const st = curState(), def = curDef();
   if(st.mag>=def.mag || st.reserve<=0) return;
   weaponState.reloading = true; weaponState.reloadTimer=0;
@@ -445,10 +524,11 @@ function finishReload(){
 }
 
 function fireWeapon(){
-  if(!E.player.alive || E.frozen) return;
+  if(!E.player.alive || E.frozen || meleeActive) return;
   const def = curDef(), st = curState();
   if(weaponState.reloading || weaponState.fireCooldown>0 || st.mag<=0 || switching) return;
   st.mag--; weaponState.fireCooldown = def.fireRate;
+  lastShotAt = performance.now();
 
   recoilPitch = Math.min(0.34, recoilPitch + (weaponState.isADS ? def.recoilADS : def.recoil));
   weaponKick = 1; flashTimer=0.05;
@@ -456,9 +536,11 @@ function fireWeapon(){
 
   const origin = new THREE.Vector3(); camera.getWorldPosition(origin);
   const muzzleWorld = new THREE.Vector3(); flashMesh.getWorldPosition(muzzleWorld);
+  const baseDir = new THREE.Vector3(); camera.getWorldDirection(baseDir);
+  if(GW.Effects) GW.Effects.spawnMuzzleFlash(muzzleWorld, baseDir);
 
   const targets = [];
-  E.bots.forEach(b=>{ if(b.alive && GW.Bots.hostile(E.player.team,b.team)) targets.push(...b.allMeshes); });
+  E.bots.forEach(b=>{ if(isValidPlayerTarget(b)) targets.push(...b.allMeshes); });
   const allTargets = targets.concat(E.raycastTargets);
   const spreadBase = weaponState.isADS ? def.spreadADS : (E.keys['ShiftLeft']||E.keys['ShiftRight'] ? def.spreadMove : def.spread);
 
@@ -476,11 +558,16 @@ function fireWeapon(){
     if(hits.length>0){
       endPoint = hits[0].point;
       const bot = hits[0].object.userData.bot;
-      if(bot && bot.alive){
+      const isBotHit = !!(bot && bot.alive);
+      if(isBotHit){
         const dmg = hits[0].object===bot.head ? def.dmgHead : def.dmgBody;
         const died = GW.Bots.damage(bot, dmg);
         anyHit = true;
         if(died) killBot(bot, 'player', null);
+      }
+      if(GW.Effects){
+        const worldNormal = hits[0].face ? hits[0].face.normal.clone().transformDirection(hits[0].object.matrixWorld) : null;
+        GW.Effects.spawnBulletImpact(endPoint, worldNormal, isBotHit);
       }
     }
     if(p<4) spawnTracer(muzzleWorld, endPoint);
@@ -488,10 +575,15 @@ function fireWeapon(){
   if(anyHit){ hitmarkerTimer=0.18; GW.Audio.playHitmarker(); }
 }
 
-function killBot(bot, killerKind, killerRef){
+function killBot(bot, killerKind, killerRef, isMelee){
   GW.Bots.kill(bot);
-  addFeed(killerKind==='player' ? '+1 BAJA' : `${killerRef?killerRef.team==='A'?'ALIADO':'ENEMIGO':''} ELIMINÓ A UN OBJETIVO`);
-  if(killerKind==='player') E.player.kills++;
+  if(GW.Effects) GW.Effects.spawnBloodPool(bot.group.position.clone());
+  if(isMelee) addFeed('¡CUCHILLADO!');
+  else addFeed(killerKind==='player' ? '+1 BAJA' : `${killerRef?killerRef.team==='A'?'ALIADO':'ENEMIGO':''} ELIMINÓ A UN OBJETIVO`);
+  if(killerKind==='player'){
+    E.player.kills++;
+    if(GW.Effects) GW.Effects.spawnKillFlash();
+  }
   if(E.mode) E.mode.onCombatantKilled('bot', bot, killerKind, killerRef);
 }
 
@@ -505,6 +597,7 @@ E.damageBot = function(bot, amount, attacker){
 E.botMuzzleFlash = function(pos){
   botFlashLight.position.copy(pos); botFlashLight.intensity=2.2;
   setTimeout(()=>{botFlashLight.intensity=0;},60);
+  if(GW.Effects) GW.Effects.spawnMuzzleFlash(pos, null);
 };
 const botFlashLight = new THREE.PointLight(0xffaa55,0,5,2);
 scene.add(botFlashLight);
@@ -640,11 +733,23 @@ function updateAmmoCrates(dt){
 }
 
 /* ============================= INPUT ============================= */
+/* Dodge: double-tap a movement key within a short window for a quick burst of momentum. */
+const DOUBLE_TAP_WINDOW = 280; // ms
+const lastTapTime = {KeyW:-9999, KeyA:-9999, KeyS:-9999, KeyD:-9999};
+const DODGE_KEYS = {KeyW:1, KeyA:1, KeyS:1, KeyD:1};
+let dodgeRequestCode = null;
+
 document.addEventListener('keydown',(e)=>{
   E.keys[e.code]=true;
   if(!E.matchActive || E.frozen) return;
   if(e.code==='Space'){ e.preventDefault(); jumpRequested=true; }
   if(e.code==='KeyR') startReload();
+  if(e.code==='KeyV') meleeRequested = true;
+  if(!e.repeat && DODGE_KEYS[e.code]){
+    const now = performance.now();
+    if(now - lastTapTime[e.code] < DOUBLE_TAP_WINDOW) dodgeRequestCode = e.code;
+    lastTapTime[e.code] = now;
+  }
   if(!E.switchLocked){
     if(e.code==='Digit1') selectSlot(0);
     if(e.code==='Digit2') selectSlot(1);
@@ -668,26 +773,40 @@ document.addEventListener('mouseup',(e)=>{
 });
 document.addEventListener('contextmenu',(e)=>e.preventDefault());
 
+let pointerJustLocked = false;
 document.addEventListener('pointerlockchange', ()=>{
   if(document.pointerLockElement === renderer.domElement){
     E.frozen = false;
+    pointerJustLocked = true;
     if(GW.menuHooks.onPointerLocked) GW.menuHooks.onPointerLocked();
   } else {
     mouseLeftDown=false; mouseRightDown=false;
-    if(E.matchActive && !E.frozen){
+    if(E.matchActive && !E._freezeExitsLock){
       E.frozen = true;
       if(GW.menuHooks.onPointerUnlocked) GW.menuHooks.onPointerUnlocked();
     }
+    E._freezeExitsLock = false;
   }
 });
 
 const SENS = 0.0022;
+const MAX_MOUSE_DELTA = 120;
 document.addEventListener('mousemove',(e)=>{
   if(E.frozen || !E.matchActive) return;
+  if(pointerJustLocked){
+    // Chromium can report a huge spurious movementX/Y on the very first
+    // sample right after pointer lock is acquired, snapping the camera.
+    pointerJustLocked = false;
+    return;
+  }
+  const dx = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, e.movementX));
+  const dy = Math.max(-MAX_MOUSE_DELTA, Math.min(MAX_MOUSE_DELTA, e.movementY));
   const fovRatio = camera.fov / BASE_FOV;
   const sensMul = weaponState.isADS ? Math.max(0.12, fovRatio) : 1.0;
-  yaw -= e.movementX * SENS * sensMul;
-  pitch -= e.movementY * SENS * sensMul;
+  const userSens = (E.config && typeof E.config.sensitivity==='number') ? E.config.sensitivity : 1.0;
+  const invert = (E.config && E.config.invertY) ? -1 : 1;
+  yaw -= dx * SENS * sensMul * userSens;
+  pitch -= dy * SENS * sensMul * userSens * invert;
   pitch = Math.max(-1.45, Math.min(1.45, pitch));
 });
 
@@ -695,6 +814,9 @@ E.requestPointerLock = function(){
   GW.Audio.ensure();
   renderer.domElement.requestPointerLock = renderer.domElement.requestPointerLock || renderer.domElement.mozRequestPointerLock;
   renderer.domElement.requestPointerLock();
+};
+E.isPointerLocked = function(){
+  return document.pointerLockElement === renderer.domElement;
 };
 
 /* ============================= HUD ============================= */
@@ -729,9 +851,19 @@ function updateHUD(dt){
   const hm = document.getElementById('hitmarker');
   if(hitmarkerTimer>0){ hitmarkerTimer -= dt; hm.style.opacity = Math.min(1,hitmarkerTimer*6); } else hm.style.opacity=0;
 
-  const scoped = def.key==='sniper';
-  document.getElementById('scopeOverlay').style.opacity = scoped ? weaponState.adsAmount : 0;
-  document.getElementById('crosshair').style.opacity = scoped ? Math.max(0,1-weaponState.adsAmount*3) : (1-weaponState.adsAmount*0.9);
+  const scoped = def.sight==='scope';
+  const dotSight = def.sight==='dot';
+  const scopeOverlayEl = document.getElementById('scopeOverlay');
+  scopeOverlayEl.style.opacity = scoped ? weaponState.adsAmount : 0;
+  if(scoped){
+    const size = (def.scopeSize||340)+'px';
+    const circle = document.getElementById('scopeCircle'), crossV = document.getElementById('scopeCross'), crossH = document.getElementById('scopeCrossH');
+    circle.style.width = size; circle.style.height = size;
+    crossV.style.height = size; crossH.style.width = size;
+  }
+  const sightDotEl = document.getElementById('sightDot');
+  if(sightDotEl) sightDotEl.style.opacity = dotSight ? Math.min(1, weaponState.adsAmount*1.6) : 0;
+  document.getElementById('crosshair').style.opacity = (scoped||dotSight) ? Math.max(0,1-weaponState.adsAmount*3) : (1-weaponState.adsAmount*0.9);
 
   const gapPx = 6 + ((E.keys['ShiftLeft']||E.keys['ShiftRight'])&&!weaponState.isADS?18:0) + (weaponState.isADS?-4:8) + ((E.keys['ControlLeft']||E.keys['ControlRight'])?-2:0);
   const g = Math.max(2,gapPx);
@@ -766,7 +898,7 @@ function drawMinimap(){
     const rx = dx*cos-dz*sin, rz = dx*sin+dz*cos;
     const mx = 85+(rx/MM_RANGE)*80, my = 85+(rz/MM_RANGE)*80;
     const isAlly = !GW.Bots.hostile(E.player.team, b.team);
-    mmCtx.fillStyle = isAlly ? '#3ba0ff' : (b.state==='attack'?'#ff3b30':(b.state==='chase'?'#ff9a30':'#c96b3a'));
+    mmCtx.fillStyle = isAlly ? '#3ba0ff' : (b.state==='attack'?'#ff3b30':(b.state==='chase'?'#ff9a30':(b.state==='search'?'#ffd23b':'#c96b3a')));
     mmCtx.beginPath(); mmCtx.arc(mx,my,4,0,Math.PI*2); mmCtx.fill();
   });
 
@@ -828,7 +960,6 @@ function animate(){
   const dt = Math.min(clock.getDelta(), 0.05);
   if(!E.matchActive){ renderer.render(scene, camera); return; }
 
-  scene.updateMatrixWorld();
   updateDynamicObjects(dt);
   updateAmmoCrates(dt);
 
@@ -840,14 +971,7 @@ function animate(){
 
   const def = curDef(), st = curState();
   if(weaponState.fireCooldown>0) weaponState.fireCooldown -= dt;
-
-  if(!E.frozen && !switching){
-    const sprinting = E.keys['ShiftLeft']||E.keys['ShiftRight'];
-    if(sprinting && mouseLeftDown){ E.keys['ShiftLeft']=false; E.keys['ShiftRight']=false; }
-    if(def.auto && mouseLeftDown) fireWeapon();
-    else if(!def.auto && firePressedEdge) fireWeapon();
-  }
-  firePressedEdge=false;
+  if(meleeCooldown>0) meleeCooldown -= dt;
 
   if(switching){
     switchTimer += dt;
@@ -865,26 +989,39 @@ function animate(){
     if(weaponState.reloadTimer >= curDef().reloadTime) finishReload();
   }
 
-  weaponState.isADS = mouseRightDown && !weaponState.reloading && !switching && !E.frozen;
+  weaponState.isADS = mouseRightDown && !weaponState.reloading && !switching && !E.frozen && !meleeActive;
   const adsTarget = weaponState.isADS ? 1 : 0;
   weaponState.adsAmount += (adsTarget-weaponState.adsAmount)*Math.min(1,dt*9);
   camera.fov = THREE.MathUtils.lerp(BASE_FOV, def.adsFov, weaponState.adsAmount);
   camera.updateProjectionMatrix();
 
+  if(!E.frozen && !switching && !meleeActive){
+    const sprinting = E.keys['ShiftLeft']||E.keys['ShiftRight'];
+    if(sprinting && mouseLeftDown){ E.keys['ShiftLeft']=false; E.keys['ShiftRight']=false; }
+    if(def.auto && mouseLeftDown) fireWeapon();
+    else if(!def.auto && firePressedEdge) fireWeapon();
+    if(meleeRequested) performMelee();
+  }
+  firePressedEdge=false; meleeRequested=false;
+
+  updateMelee(dt);
+
   REST_POS.set(...def.rest); ADS_POS.set(...def.ads);
   const switchDip = switching ? Math.sin(Math.PI*Math.min(1,switchTimer/switchDuration))*0.42 : 0;
   const targetPos = new THREE.Vector3().lerpVectors(REST_POS, ADS_POS, weaponState.adsAmount);
-  weaponMount.position.lerp(targetPos, Math.min(1,dt*10));
+  if(!meleeActive) weaponMount.position.lerp(targetPos, Math.min(1,dt*10));
   weaponMount.position.y -= switchDip;
 
   weaponKick += (0-weaponKick)*Math.min(1,dt*9);
   const idleT = performance.now()*0.0012;
-  weaponModel.position.set(Math.sin(idleT)*0.004, Math.sin(idleT*1.3)*0.0035 - weaponKick*0.02, -weaponKick*0.12);
-  weaponModel.rotation.x = -weaponKick*0.16;
-  weaponModel.rotation.z = Math.sin(idleT*0.7)*0.01;
+  if(!meleeActive){
+    weaponModel.position.set(Math.sin(idleT)*0.004, Math.sin(idleT*1.3)*0.0035 - weaponKick*0.02, -weaponKick*0.12);
+    weaponModel.rotation.x = -weaponKick*0.16;
+    weaponModel.rotation.z = Math.sin(idleT*0.7)*0.01;
+  }
 
-  const recoilVisualMul = 0.4 + 0.6*(camera.fov/BASE_FOV);
-  recoilPitch += (0-recoilPitch)*Math.min(1,dt*6);
+  const sinceShot = performance.now() - lastShotAt;
+  if(sinceShot > 220){ recoilPitch += (0-recoilPitch)*Math.min(1,dt*3.2); }
 
   if(flashTimer>0){ flashTimer -= dt; flashLight.intensity=3.2*(flashTimer/0.05); flashMat.opacity=flashTimer/0.05; }
   else { flashLight.intensity=0; flashMat.opacity=0; }
@@ -892,12 +1029,13 @@ function animate(){
   tracerPool.forEach(t=>{
     if(t.life>0){ t.life -= dt; t.mesh.material.opacity=Math.max(0,t.life/0.07)*0.85; if(t.life<=0) t.mesh.visible=false; }
   });
+  if(GW.Effects) GW.Effects.update(dt);
 
   if(E.player.alive && E.player.health<E.player.maxHealth && performance.now()-E.player.lastDamageTime>4000){
     E.player.health = Math.min(E.player.maxHealth, E.player.health + dt*12);
   }
 
-  pitchObj.rotation.x = pitch + recoilPitch*recoilVisualMul;
+  pitchObj.rotation.x = pitch + recoilPitch;
 
   updateHUD(dt);
   renderer.render(scene, camera);
@@ -915,6 +1053,11 @@ function updatePlayer(dt){
   let speed = crouching ? 2.6 : (canSprint ? 8.0 : 4.6);
   if(weaponState.isADS) speed *= def.adsMoveMul;
 
+  // Straferunning: a speed bonus for combining forward/back with strafe input,
+  // rewarding the classic diagonal-movement technique instead of penalizing it.
+  const strafing = (E.keys['KeyA']||E.keys['KeyD']) && (E.keys['KeyW']||E.keys['KeyS']);
+  if(strafing && !crouching) speed *= 1.15;
+
   const moveDir = new THREE.Vector3();
   if(E.keys['KeyW']) moveDir.z -= 1;
   if(E.keys['KeyS']) moveDir.z += 1;
@@ -929,7 +1072,33 @@ function updatePlayer(dt){
     -moveDir.x*sinY + moveDir.z*cosY
   );
 
-  const posObj = {x: playerRig.position.x+worldMove.x*speed*dt, z: playerRig.position.z+worldMove.z*speed*dt};
+  // Dodge: a double-tapped movement key fires a short decaying burst of
+  // momentum in that direction (grounded, not crouching/ADS, cooldown-gated).
+  if(dodgeCooldown>0) dodgeCooldown -= dt;
+  if(dodgeRequestCode){
+    const code = dodgeRequestCode; dodgeRequestCode = null;
+    if(dodgeCooldown<=0 && grounded && !crouching && !weaponState.isADS){
+      let lx=0, lz=0;
+      if(code==='KeyA') lx=-1; else if(code==='KeyD') lx=1;
+      else if(code==='KeyS') lz=1; else if(code==='KeyW') lz=-1;
+      dodgeDir.set(lx*cosY+lz*sinY, 0, -lx*sinY+lz*cosY).normalize();
+      dodgeTimer = DODGE_DURATION;
+      dodgeCooldown = DODGE_COOLDOWN;
+      GW.Audio.playSwitch();
+    }
+  }
+  let dodgeMoveX=0, dodgeMoveZ=0;
+  if(dodgeTimer>0){
+    const dodgeSpeed = DODGE_SPEED * (dodgeTimer/DODGE_DURATION);
+    dodgeMoveX = dodgeDir.x*dodgeSpeed*dt;
+    dodgeMoveZ = dodgeDir.z*dodgeSpeed*dt;
+    dodgeTimer -= dt;
+  }
+
+  const posObj = {
+    x: playerRig.position.x+worldMove.x*speed*dt+dodgeMoveX,
+    z: playerRig.position.z+worldMove.z*speed*dt+dodgeMoveZ
+  };
   resolveHorizontalCollision(posObj, feetY);
   playerRig.position.x = posObj.x; playerRig.position.z = posObj.z;
 
@@ -965,6 +1134,7 @@ function updatePlayer(dt){
 /* ============================= MATCH LIFECYCLE ============================= */
 E.freeze = function(){
   E.frozen = true;
+  E._freezeExitsLock = true;
   if(document.exitPointerLock) document.exitPointerLock();
 };
 
@@ -1006,6 +1176,7 @@ E.startMatch = function(config){
 
   E.mode = GW.MODE_FACTORIES[config.modeId]();
   E.allowRespawn = E.mode.allowRespawn;
+  E.allowBotRespawn = E.mode.allowBotRespawn !== undefined ? E.mode.allowBotRespawn : E.mode.allowRespawn;
   E.mode.init();
 
   hideCenterMsg();

@@ -10,6 +10,7 @@
 
 <div id="hud">
   <div id="vignette"></div>
+  <div id="gwKillFlash"></div>
 
   <div id="scopeOverlay">
     <div id="scopeCircle"></div>
@@ -25,6 +26,7 @@
     <div class="ch-line" id="ch-right"></div>
     <div class="ch-line" id="ch-dot"></div>
   </div>
+  <div id="sightDot"><div id="sightDotRing"></div><div id="sightDotCenter"></div></div>
   <div id="hitmarker"></div>
   <div id="hitDir"><div id="hitDirArrow"></div></div>
 
@@ -134,6 +136,40 @@
       <span id="botCountVal">8</span>
     </div>
 
+    <div class="section-title">SENSIBILIDAD DEL RATÓN</div>
+    <div class="setting-row">
+      <input type="range" id="sensitivityRange" min="0.3" max="2.5" step="0.05" value="1">
+      <span id="sensitivityVal">1.00x</span>
+    </div>
+
+    <div class="section-title">VOLUMEN</div>
+    <div class="setting-row">
+      <input type="range" id="volumeRange" min="0" max="100" step="5" value="70">
+      <span id="volumeVal">70%</span>
+    </div>
+
+    <div class="section-title">DURACIÓN DE PARTIDA</div>
+    <div class="setting-row">
+      <input type="range" id="timeLimitRange" min="3" max="15" step="1" value="8">
+      <span id="timeLimitVal">8 min</span>
+    </div>
+
+    <div class="section-title">FUEGO AMIGO</div>
+    <div class="setting-row">
+      <div class="toggle-row" id="friendlyFireButtons">
+        <div class="dbtn active" data-val="off">DESACTIVADO</div>
+        <div class="dbtn" data-val="on">ACTIVADO</div>
+      </div>
+    </div>
+
+    <div class="section-title">INVERTIR EJE Y</div>
+    <div class="setting-row">
+      <div class="toggle-row" id="invertYButtons">
+        <div class="dbtn active" data-val="off">DESACTIVADO</div>
+        <div class="dbtn" data-val="on">ACTIVADO</div>
+      </div>
+    </div>
+
     <div class="setup-footer">
       <span style="color:var(--text-dim);font-size:12px;letter-spacing:1px;">En equipos, los bots se dividen entre tu escuadra y la enemiga.</span>
       <button class="menu-btn primary" id="btnStartMatch">INICIAR PARTIDA</button>
@@ -148,6 +184,7 @@
 <script src="js/bots.js"></script>
 <script src="js/modes.js"></script>
 <script src="js/game.js"></script>
+<script src="js/effects.js"></script>
 <script src="js/menu.js"></script>
 </body>
 </html>
