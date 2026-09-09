@@ -5,7 +5,7 @@ window.GW = window.GW || {};
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
-const BASE_FOV = 75;
+let BASE_FOV = 75;
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -21,6 +21,19 @@ window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+const GRAPHICS_TIERS = {
+  baja:   { pixelRatio:1,   shadows:false, shadowSize:512  },
+  media:  { pixelRatio:1.5, shadows:true,  shadowSize:1024 },
+  alta:   { pixelRatio:2,   shadows:true,  shadowSize:2048 },
+};
+let shadowMapSize = 2048;
+function applyGraphicsQuality(quality){
+  const t = GRAPHICS_TIERS[quality] || GRAPHICS_TIERS.alta;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, t.pixelRatio));
+  renderer.shadowMap.enabled = t.shadows;
+  shadowMapSize = t.shadowSize;
+}
 
 const E = {
   scene, camera, renderer,
@@ -236,7 +249,7 @@ function setupWorldBase(mapDef){
   sunLight = new THREE.DirectionalLight(0xfff3d6, 1.15);
   sunLight.position.set(60,90,30);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(2048,2048);
+  sunLight.shadow.mapSize.set(shadowMapSize,shadowMapSize);
   const s = mapDef.size;
   sunLight.shadow.camera.left=-s; sunLight.shadow.camera.right=s; sunLight.shadow.camera.top=s; sunLight.shadow.camera.bottom=-s;
   sunLight.shadow.camera.near=1; sunLight.shadow.camera.far=300;
@@ -638,6 +651,7 @@ function respawnPlayer(){
   if(!E.matchActive) return;
   E.player.health = E.player.maxHealth;
   E.player.alive = true;
+  adsToggleState = false;
   const list = E.player.team==='A' ? (E.mapData.spawnsA||E.mapData.spawnsFFA) : (E.mapData.spawnsB||E.mapData.spawnsFFA);
   const sp = list[Math.floor(Math.random()*list.length)];
   playerRig.position.set(sp[0],0,sp[1]);
@@ -647,6 +661,7 @@ function respawnPlayer(){
 E.respawnAllForRound = function(){
   E.bots.forEach(b=>GW.Bots.respawn(b));
   E.player.health = E.player.maxHealth; E.player.alive = true;
+  adsToggleState = false;
   const list = E.player.team==='A' ? E.mapData.spawnsA : E.mapData.spawnsB;
   const sp = list[Math.floor(Math.random()*list.length)];
   playerRig.position.set(sp[0],0,sp[1]);
@@ -761,11 +776,11 @@ window.addEventListener('wheel',(e)=>{
   selectSlot(E.currentSlot===0?1:0);
 });
 
-let mouseLeftDown=false, mouseRightDown=false, firePressedEdge=false;
+let mouseLeftDown=false, mouseRightDown=false, firePressedEdge=false, rightPressedEdge=false, adsToggleState=false;
 renderer.domElement.addEventListener('mousedown',(e)=>{
   if(!E.matchActive || E.frozen) return;
   if(e.button===0){ mouseLeftDown=true; firePressedEdge=true; }
-  if(e.button===2) mouseRightDown=true;
+  if(e.button===2){ mouseRightDown=true; rightPressedEdge=true; }
 });
 document.addEventListener('mouseup',(e)=>{
   if(e.button===0) mouseLeftDown=false;
@@ -953,7 +968,7 @@ function updateDynamicObjects(dt){
 
 /* ============================= MAIN LOOP ============================= */
 const clock = new THREE.Clock();
-let footstepTimer=0, footstepBobTimer=0;
+let footstepTimer=0, footstepBobTimer=0, currentSpeedFactor=0;
 
 function animate(){
   requestAnimationFrame(animate);
@@ -989,7 +1004,13 @@ function animate(){
     if(weaponState.reloadTimer >= curDef().reloadTime) finishReload();
   }
 
-  weaponState.isADS = mouseRightDown && !weaponState.reloading && !switching && !E.frozen && !meleeActive;
+  const adsModeToggle = E.config && E.config.adsMode==='toggle';
+  if(rightPressedEdge && !E.frozen){
+    if(adsModeToggle) adsToggleState = !adsToggleState;
+  }
+  rightPressedEdge = false;
+  const wantsADS = adsModeToggle ? adsToggleState : mouseRightDown;
+  weaponState.isADS = wantsADS && !weaponState.reloading && !switching && !E.frozen && !meleeActive;
   const adsTarget = weaponState.isADS ? 1 : 0;
   weaponState.adsAmount += (adsTarget-weaponState.adsAmount)*Math.min(1,dt*9);
   camera.fov = THREE.MathUtils.lerp(BASE_FOV, def.adsFov, weaponState.adsAmount);
@@ -1008,16 +1029,29 @@ function animate(){
 
   REST_POS.set(...def.rest); ADS_POS.set(...def.ads);
   const switchDip = switching ? Math.sin(Math.PI*Math.min(1,switchTimer/switchDuration))*0.42 : 0;
+  const reloadT = weaponState.reloading ? Math.min(1, weaponState.reloadTimer/def.reloadTime) : 0;
+  const reloadDip = Math.sin(Math.PI*reloadT)*0.14;
+  const reloadTilt = Math.sin(Math.PI*reloadT)*0.55;
   const targetPos = new THREE.Vector3().lerpVectors(REST_POS, ADS_POS, weaponState.adsAmount);
   if(!meleeActive) weaponMount.position.lerp(targetPos, Math.min(1,dt*10));
-  weaponMount.position.y -= switchDip;
+  weaponMount.position.y -= switchDip + reloadDip;
 
   weaponKick += (0-weaponKick)*Math.min(1,dt*9);
   const idleT = performance.now()*0.0012;
+  // Weapon sway/bob synced to the same footstep phase driving the camera bob,
+  // scaled by movement intensity and damped while aiming down sights.
+  const walkIntensity = Math.min(1.3, currentSpeedFactor) * (1 - weaponState.adsAmount*0.85);
+  const walkBobX = Math.sin(footstepBobTimer)*0.014*walkIntensity;
+  const walkBobY = Math.abs(Math.sin(footstepBobTimer))*0.01*walkIntensity;
+  const walkSwayZ = Math.sin(footstepBobTimer*0.5)*0.018*walkIntensity;
   if(!meleeActive){
-    weaponModel.position.set(Math.sin(idleT)*0.004, Math.sin(idleT*1.3)*0.0035 - weaponKick*0.02, -weaponKick*0.12);
-    weaponModel.rotation.x = -weaponKick*0.16;
-    weaponModel.rotation.z = Math.sin(idleT*0.7)*0.01;
+    weaponModel.position.set(
+      Math.sin(idleT)*0.004 + walkBobX,
+      Math.sin(idleT*1.3)*0.0035 + walkBobY - weaponKick*0.02,
+      -weaponKick*0.12
+    );
+    weaponModel.rotation.x = -weaponKick*0.16 + reloadTilt;
+    weaponModel.rotation.z = Math.sin(idleT*0.7)*0.01 + walkSwayZ;
   }
 
   const sinceShot = performance.now() - lastShotAt;
@@ -1118,6 +1152,7 @@ function updatePlayer(dt){
   pitchObj.position.y = currentEyeHeight;
 
   const speedFactor = isMoving && grounded ? (canSprint?1.6:(crouching?0.6:1.0)) : 0;
+  currentSpeedFactor = speedFactor;
   footstepBobTimer += dt*speedFactor*8;
   const bobY = speedFactor>0 ? Math.abs(Math.sin(footstepBobTimer))*0.045 : 0;
   const bobX = speedFactor>0 ? Math.sin(footstepBobTimer*0.5)*0.03 : 0;
@@ -1141,6 +1176,14 @@ E.freeze = function(){
 E.startMatch = function(config){
   E.matchId++;
   E.config = config;
+  applyGraphicsQuality(config.graphicsQuality);
+  BASE_FOV = config.fov || 75;
+  camera.fov = BASE_FOV;
+  camera.updateProjectionMatrix();
+  if(GW.Effects) GW.Effects.setGoreEnabled(config.gore !== false);
+  const minimapEl = document.getElementById('minimapWrap');
+  if(minimapEl) minimapEl.style.display = config.showMinimap===false ? 'none' : '';
+  adsToggleState = false;
   const mapDef = GW.getMap(config.mapId);
   loadMap(mapDef);
 

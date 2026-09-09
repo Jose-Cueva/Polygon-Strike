@@ -5,7 +5,8 @@ GW.menuHooks = GW.menuHooks || {};
 
 const cfg = {
   modeId:'ffa', mapId:'industrial', botCount:8, difficulty:'normal', primaryWeapon:'rifle',
-  sensitivity:1.0, masterVolume:70, timeLimitMin:8, friendlyFire:false, invertY:false
+  sensitivity:1.0, masterVolume:70, timeLimitMin:8, friendlyFire:false, invertY:false,
+  fov:75, graphicsQuality:'alta', gore:true, showMinimap:true, adsMode:'hold'
 };
 let matchEndShown = false;
 
@@ -14,6 +15,16 @@ const el = id => document.getElementById(id);
 function showScreen(name){
   ['main','setup'].forEach(n=>el('screen-'+n).classList.toggle('active', n===name));
 }
+
+function showTab(name){
+  el('setupTabs').querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.dataset.tabPanel===name));
+}
+el('setupTabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.tab-btn'); if(!btn) return;
+  GW.Audio.playUIClick();
+  showTab(btn.dataset.tab);
+});
 
 /* ---------------- Setup screen: dynamic content ---------------- */
 function renderModeList(){
@@ -72,10 +83,36 @@ function renderInvertY(){
     b.classList.toggle('active', (b.dataset.val==='on')===cfg.invertY);
   });
 }
+function renderAdsMode(){
+  el('adsModeButtons').querySelectorAll('.dbtn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.val===cfg.adsMode);
+  });
+}
+function renderFov(){
+  el('fovRange').value = cfg.fov;
+  el('fovVal').textContent = cfg.fov+'°';
+}
+function renderGraphicsQuality(){
+  el('graphicsQualityButtons').querySelectorAll('.dbtn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.val===cfg.graphicsQuality);
+  });
+}
+function renderGore(){
+  el('goreButtons').querySelectorAll('.dbtn').forEach(b=>{
+    b.classList.toggle('active', (b.dataset.val==='on')===cfg.gore);
+  });
+}
+function renderMinimap(){
+  el('minimapButtons').querySelectorAll('.dbtn').forEach(b=>{
+    b.classList.toggle('active', (b.dataset.val==='on')===cfg.showMinimap);
+  });
+}
 
 function renderSetup(){
   renderModeList(); renderMapList(); renderWeaponList(); renderDifficulty(); renderBotCount();
   renderSensitivity(); renderVolume(); renderTimeLimit(); renderFriendlyFire(); renderInvertY();
+  renderAdsMode(); renderFov(); renderGraphicsQuality(); renderGore(); renderMinimap();
+  showTab('partida');
 }
 
 el('modeList').addEventListener('click', (e)=>{
@@ -130,6 +167,34 @@ el('invertYButtons').addEventListener('click', (e)=>{
   cfg.invertY = btn.dataset.val==='on';
   GW.Audio.playUIClick();
   renderInvertY();
+});
+el('adsModeButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.dbtn'); if(!btn) return;
+  cfg.adsMode = btn.dataset.val;
+  GW.Audio.playUIClick();
+  renderAdsMode();
+});
+el('fovRange').addEventListener('input', (e)=>{
+  cfg.fov = parseInt(e.target.value,10);
+  el('fovVal').textContent = cfg.fov+'°';
+});
+el('graphicsQualityButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.dbtn'); if(!btn) return;
+  cfg.graphicsQuality = btn.dataset.val;
+  GW.Audio.playUIClick();
+  renderGraphicsQuality();
+});
+el('goreButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.dbtn'); if(!btn) return;
+  cfg.gore = btn.dataset.val==='on';
+  GW.Audio.playUIClick();
+  renderGore();
+});
+el('minimapButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.dbtn'); if(!btn) return;
+  cfg.showMinimap = btn.dataset.val==='on';
+  GW.Audio.playUIClick();
+  renderMinimap();
 });
 
 /* ---------------- Navigation ---------------- */

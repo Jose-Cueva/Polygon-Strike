@@ -111,62 +111,111 @@
       <button class="menu-btn secondary" id="btnBack">← VOLVER</button>
     </div>
 
-    <div class="section-title">MODO DE JUEGO</div>
-    <div class="card-row" id="modeList"></div>
+    <div class="tab-bar" id="setupTabs">
+      <div class="tab-btn active" data-tab="partida">PARTIDA</div>
+      <div class="tab-btn" data-tab="armamento">ARMAMENTO</div>
+      <div class="tab-btn" data-tab="ajustes">AJUSTES</div>
+    </div>
 
-    <div class="section-title">MAPA</div>
-    <div class="card-row" id="mapList"></div>
+    <div class="tab-panel active" data-tab-panel="partida">
+      <div class="section-title">MODO DE JUEGO</div>
+      <div class="card-row" id="modeList"></div>
 
-    <div class="section-title">ARMA PRINCIPAL <span style="color:var(--text-dim);font-weight:400;">(la pistola siempre va de secundaria)</span></div>
-    <div class="card-row" id="weaponList"></div>
-    <div id="weaponNote">En Modo Arsenal todos empiezan con pistola y ascienden de arma con cada baja.</div>
+      <div class="section-title">MAPA</div>
+      <div class="card-row" id="mapList"></div>
 
-    <div class="section-title">DIFICULTAD DE LOS BOTS</div>
-    <div class="setting-row">
-      <div id="difficultyButtons">
-        <div class="dbtn" data-diff="facil">FÁCIL</div>
-        <div class="dbtn active" data-diff="normal">NORMAL</div>
-        <div class="dbtn" data-diff="dificil">DIFÍCIL</div>
+      <div class="section-title">DIFICULTAD DE LOS BOTS</div>
+      <div class="setting-row">
+        <div id="difficultyButtons">
+          <div class="dbtn" data-diff="facil">FÁCIL</div>
+          <div class="dbtn active" data-diff="normal">NORMAL</div>
+          <div class="dbtn" data-diff="dificil">DIFÍCIL</div>
+        </div>
+      </div>
+
+      <div class="section-title">NÚMERO DE BOTS</div>
+      <div class="setting-row">
+        <input type="range" id="botCountRange" min="4" max="16" step="2" value="8">
+        <span id="botCountVal">8</span>
       </div>
     </div>
 
-    <div class="section-title">NÚMERO DE BOTS</div>
-    <div class="setting-row">
-      <input type="range" id="botCountRange" min="4" max="16" step="2" value="8">
-      <span id="botCountVal">8</span>
+    <div class="tab-panel" data-tab-panel="armamento">
+      <div class="section-title">ARMA PRINCIPAL <span style="color:var(--text-dim);font-weight:400;">(la pistola siempre va de secundaria)</span></div>
+      <div class="card-row" id="weaponList"></div>
+      <div id="weaponNote">En Modo Arsenal todos empiezan con pistola y ascienden de arma con cada baja.</div>
     </div>
 
-    <div class="section-title">SENSIBILIDAD DEL RATÓN</div>
-    <div class="setting-row">
-      <input type="range" id="sensitivityRange" min="0.3" max="2.5" step="0.05" value="1">
-      <span id="sensitivityVal">1.00x</span>
-    </div>
-
-    <div class="section-title">VOLUMEN</div>
-    <div class="setting-row">
-      <input type="range" id="volumeRange" min="0" max="100" step="5" value="70">
-      <span id="volumeVal">70%</span>
-    </div>
-
-    <div class="section-title">DURACIÓN DE PARTIDA</div>
-    <div class="setting-row">
-      <input type="range" id="timeLimitRange" min="3" max="15" step="1" value="8">
-      <span id="timeLimitVal">8 min</span>
-    </div>
-
-    <div class="section-title">FUEGO AMIGO</div>
-    <div class="setting-row">
-      <div class="toggle-row" id="friendlyFireButtons">
-        <div class="dbtn active" data-val="off">DESACTIVADO</div>
-        <div class="dbtn" data-val="on">ACTIVADO</div>
+    <div class="tab-panel" data-tab-panel="ajustes">
+      <div class="section-title">CONTROLES</div>
+      <div class="section-title sub">Sensibilidad del ratón</div>
+      <div class="setting-row">
+        <input type="range" id="sensitivityRange" min="0.3" max="2.5" step="0.05" value="1">
+        <span id="sensitivityVal">1.00x</span>
       </div>
-    </div>
+      <div class="section-title sub">Invertir eje Y</div>
+      <div class="setting-row">
+        <div class="toggle-row" id="invertYButtons">
+          <div class="dbtn active" data-val="off">DESACTIVADO</div>
+          <div class="dbtn" data-val="on">ACTIVADO</div>
+        </div>
+      </div>
+      <div class="section-title sub">Modo de mira (ADS)</div>
+      <div class="setting-row">
+        <div class="toggle-row" id="adsModeButtons">
+          <div class="dbtn active" data-val="hold">MANTENER</div>
+          <div class="dbtn" data-val="toggle">ALTERNAR</div>
+        </div>
+      </div>
 
-    <div class="section-title">INVERTIR EJE Y</div>
-    <div class="setting-row">
-      <div class="toggle-row" id="invertYButtons">
-        <div class="dbtn active" data-val="off">DESACTIVADO</div>
-        <div class="dbtn" data-val="on">ACTIVADO</div>
+      <div class="section-title">AUDIO</div>
+      <div class="section-title sub">Volumen</div>
+      <div class="setting-row">
+        <input type="range" id="volumeRange" min="0" max="100" step="5" value="70">
+        <span id="volumeVal">70%</span>
+      </div>
+
+      <div class="section-title">GRÁFICOS</div>
+      <div class="section-title sub">Campo de visión (FOV)</div>
+      <div class="setting-row">
+        <input type="range" id="fovRange" min="60" max="100" step="1" value="75">
+        <span id="fovVal">75°</span>
+      </div>
+      <div class="section-title sub">Calidad gráfica</div>
+      <div class="setting-row">
+        <div id="graphicsQualityButtons">
+          <div class="dbtn" data-val="baja">BAJA</div>
+          <div class="dbtn" data-val="media">MEDIA</div>
+          <div class="dbtn active" data-val="alta">ALTA</div>
+        </div>
+      </div>
+      <div class="section-title sub">Sangre</div>
+      <div class="setting-row">
+        <div class="toggle-row" id="goreButtons">
+          <div class="dbtn" data-val="off">DESACTIVADA</div>
+          <div class="dbtn active" data-val="on">ACTIVADA</div>
+        </div>
+      </div>
+      <div class="section-title sub">Mostrar minimapa</div>
+      <div class="setting-row">
+        <div class="toggle-row" id="minimapButtons">
+          <div class="dbtn" data-val="off">OCULTO</div>
+          <div class="dbtn active" data-val="on">VISIBLE</div>
+        </div>
+      </div>
+
+      <div class="section-title">PARTIDA</div>
+      <div class="section-title sub">Duración de partida</div>
+      <div class="setting-row">
+        <input type="range" id="timeLimitRange" min="3" max="15" step="1" value="8">
+        <span id="timeLimitVal">8 min</span>
+      </div>
+      <div class="section-title sub">Fuego amigo</div>
+      <div class="setting-row">
+        <div class="toggle-row" id="friendlyFireButtons">
+          <div class="dbtn active" data-val="off">DESACTIVADO</div>
+          <div class="dbtn" data-val="on">ACTIVADO</div>
+        </div>
       </div>
     </div>
 

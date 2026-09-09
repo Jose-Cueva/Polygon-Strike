@@ -31,9 +31,10 @@ GW.Effects = (function(){
   const MUZZLE_POOL_SIZE   = 6;    // pooled billboard planes
   const POOL_DECAL_SIZE    = 16;   // pooled ground blood-pool decals
 
-  const BOT_HIT_COLOR   = 0x8a0f0f; // dark arterial red — blood spatter, not "energy"
+  const BOT_HIT_COLOR   = 0x6b332f; // muted, desaturated blood red — not neon-saturated
   const WALL_HIT_COLOR  = 0xfff2b0; // yellow-white sparks
-  const MELEE_COLOR     = 0x7a0d0d; // darker red slash spray for the knife
+  const MELEE_COLOR     = 0x5c2a26; // slightly darker/muted red slash spray for the knife
+  let goreEnabled = true;
 
   /* ---------------------------------------------------------------------
      Reusable scratch objects (never allocated inside hot paths)
@@ -194,14 +195,20 @@ GW.Effects = (function(){
   function spawnBulletImpact(position, normalOrNull, isBot){
     ensureInit();
     if(!inited) return;
-    if(isBot){
-      // Blood spatter: normal-blended (not glowing), dark arterial red, heavier
-      // gravity so droplets arc and fall rather than hang in the air like sparks.
+    if(isBot && goreEnabled){
+      // Blood spatter: normal-blended (not glowing), muted/desaturated red,
+      // heavier gravity so droplets arc and fall rather than hang like sparks.
       spawnBurst(position, normalOrNull, BOT_HIT_COLOR, {
-        speedMin:1.8, speedMax:4.2, life:0.55, size:34, gravity:6.5, halfAngle:1.3,
-        blending: THREE.NormalBlending, opacityMul:0.92
+        speedMin:1.7, speedMax:3.8, life:0.5, size:26, gravity:6.5, halfAngle:1.3,
+        blending: THREE.NormalBlending, opacityMul:0.62
       });
       spawnBloodPool(position);
+    } else if(isBot){
+      // Gore disabled: neutral spark hit-confirm instead of blood.
+      spawnBurst(position, normalOrNull, WALL_HIT_COLOR, {
+        speedMin:1.8, speedMax:3.8, life:0.4, size:34, gravity:3.2, halfAngle:1.1,
+        blending: THREE.AdditiveBlending, opacityMul:0.85
+      });
     } else {
       spawnBurst(position, normalOrNull, WALL_HIT_COLOR, {
         speedMin:2.0, speedMax:4.6, life:0.38, size:40, gravity:3.6, halfAngle:1.0,
@@ -213,6 +220,13 @@ GW.Effects = (function(){
   function spawnMeleeSlash(position){
     ensureInit();
     if(!inited) return;
+    if(!goreEnabled){
+      spawnBurst(position, null, WALL_HIT_COLOR, {
+        speedMin:2.2, speedMax:4.2, life:0.35, size:32, gravity:2.6, halfAngle:0.7,
+        blending: THREE.AdditiveBlending, opacityMul:0.85
+      });
+      return;
+    }
     let axis = null;
     const camera = GW.engine && GW.engine.camera;
     if(camera){
@@ -223,8 +237,8 @@ GW.Effects = (function(){
       axis = _meleeAxis;
     }
     spawnBurst(position, axis, MELEE_COLOR, {
-      speedMin:2.6, speedMax:4.8, life:0.45, size:36, gravity:5.5, halfAngle:0.6,
-      blending: THREE.NormalBlending, opacityMul:0.95
+      speedMin:2.4, speedMax:4.4, life:0.4, size:28, gravity:5.5, halfAngle:0.6,
+      blending: THREE.NormalBlending, opacityMul:0.68
     });
     spawnBloodPool(position);
   }
@@ -249,9 +263,9 @@ GW.Effects = (function(){
         cx+Math.cos(ang)*dist, cy+Math.sin(ang)*dist, 0,
         cx+Math.cos(ang)*dist, cy+Math.sin(ang)*dist, Math.max(rx,ry)
       );
-      grad.addColorStop(0, 'rgba(60,4,4,0.95)');
-      grad.addColorStop(0.55, 'rgba(70,6,6,0.7)');
-      grad.addColorStop(1, 'rgba(70,6,6,0)');
+      grad.addColorStop(0, 'rgba(58,26,23,0.68)');
+      grad.addColorStop(0.55, 'rgba(66,32,28,0.5)');
+      grad.addColorStop(1, 'rgba(66,32,28,0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.ellipse(cx+Math.cos(ang)*dist, cy+Math.sin(ang)*dist, rx, ry, Math.random()*Math.PI, 0, Math.PI*2);
@@ -283,7 +297,7 @@ GW.Effects = (function(){
   }
 
   function spawnBloodPool(position){
-    if(!inited) return;
+    if(!inited || !goreEnabled) return;
     const E = GW.engine;
     let groundY = position.y;
     if(E && typeof E.raycastGroundY === 'function'){
@@ -299,7 +313,7 @@ GW.Effects = (function(){
     slot.mesh.visible = true;
     slot.active = true;
     slot.elapsed = 0;
-    slot.targetOpacity = 0.75 + Math.random()*0.15;
+    slot.targetOpacity = 0.42 + Math.random()*0.12;
     slot.mat.opacity = 0;
   }
 
@@ -477,6 +491,8 @@ GW.Effects = (function(){
     spawnBloodPool(position);
   }
 
+  function setGoreEnabled(v){ goreEnabled = !!v; }
+
   return {
     init: init,
     update: update,
@@ -484,7 +500,8 @@ GW.Effects = (function(){
     spawnMuzzleFlash: spawnMuzzleFlash,
     spawnKillFlash: spawnKillFlash,
     spawnMeleeSlash: spawnMeleeSlash,
-    spawnBloodPool: spawnBloodPoolPublic
+    spawnBloodPool: spawnBloodPoolPublic,
+    setGoreEnabled: setGoreEnabled
   };
 
 })();
