@@ -354,8 +354,7 @@ addBox(1,4,20, 34,2,20, matDark);
 /* Elevated platform with ramp for verticality */
 const platformY = 3;
 const platform = addBox(16,0.6,14, -30,platformY,26, matConcrete);
-platform.position.y = platformY; // top surface at platformY+0.3
-// recompute obstacle box precisely (already added). Add guard rail
+// guard rails along the platform edges
 addBox(16,1,0.4, -30, platformY+0.9, 33, matDark, {isFloor:false});
 addBox(16,1,0.4, -30, platformY+0.9, 19, matDark, {isFloor:false});
 
@@ -934,7 +933,7 @@ function animate(){
   // weapon position lerp (rest/ads) + recoil recovery
   const targetPos = new THREE.Vector3().lerpVectors(REST_POS, ADS_POS, weapon.adsAmount);
   weaponGroup.position.lerp(targetPos, Math.min(1, dt*10));
-  weaponGroup.position.z += Math.sin(performance.now()*0.001)*0; // placeholder no-op
+  weaponGroup.position.y += Math.sin(performance.now()*0.0012)*0.0015;
   weaponGroup.rotation.x += (0 - weaponGroup.rotation.x) * Math.min(1, dt*8);
 
   // recoil pitch recovery
