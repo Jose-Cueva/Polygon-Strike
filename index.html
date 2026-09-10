@@ -46,6 +46,7 @@
   </div>
 
   <div id="modeHud"></div>
+  <div id="streakHud"></div>
   <div id="interactPrompt"><div class="ip-label">MANTÉN [E]</div><div class="ip-bar"><div class="ip-fill"></div></div></div>
 
   <div id="minimapWrap"><canvas id="minimap" width="170" height="170"></canvas></div>
@@ -61,7 +62,8 @@
     <p style="color:var(--text-dim);font-size:13px;line-height:1.9;">
       <span class="key">W A S D</span> Moverse &nbsp; <span class="key">SHIFT</span> Esprintar &nbsp; <span class="key">ESPACIO</span> Saltar<br>
       <span class="key">CTRL</span> Agacharse &nbsp; <span class="key">CLIC IZQ</span> Disparar &nbsp; <span class="key">CLIC DER</span> Apuntar<br>
-      <span class="key">R</span> Recargar &nbsp; <span class="key">1 2</span> / Rueda: Cambiar arma &nbsp; <span class="key">E</span> Interactuar
+      <span class="key">R</span> Recargar &nbsp; <span class="key">1 2</span> / Rueda: Cambiar arma &nbsp; <span class="key">E</span> Interactuar<br>
+      <span class="key">Q</span> Usar racha de bajas (UAV / Bombardeo)
     </p>
     <div class="btnrow"><button class="menu-btn primary" id="playPromptBtn">ENTRAR AL COMBATE</button></div>
   </div>
@@ -227,6 +229,12 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/maps.js"></script>

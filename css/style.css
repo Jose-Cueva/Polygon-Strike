@@ -163,6 +163,10 @@ input[type=range]{ accent-color:var(--accent); flex:1; }
 .wslot.active{color:var(--text);background:rgba(74,107,46,0.55);border-color:#7ba85a;}
 
 #modeHud{position:absolute;top:22px;left:50%;transform:translateX(-50%);text-align:center;color:var(--text);min-width:200px;}
+#streakHud{position:absolute;top:104px;left:50%;transform:translateX(-50%);text-align:center;min-width:170px;display:none;}
+.streak-label{font-size:11px;letter-spacing:2px;color:var(--accent);font-weight:700;text-shadow:0 2px 4px #000;margin-bottom:3px;}
+.streak-bar{width:170px;height:4px;background:rgba(10,12,8,0.6);border:1px solid var(--panel-line);overflow:hidden;}
+.streak-bar i{display:block;height:100%;background:linear-gradient(90deg,#ff8a3b,var(--accent));transition:width .2s;}
 .mh-row{display:flex;justify-content:space-between;gap:10px;font-size:13px;letter-spacing:2px;color:var(--text-dim);}
 .mh-row b{color:var(--text);font-family:'Oswald',sans-serif;font-size:16px;}
 .mh-row.team-a b{color:var(--ally);} .mh-row.team-b b{color:var(--danger);}

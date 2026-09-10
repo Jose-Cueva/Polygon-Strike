@@ -17,15 +17,96 @@ renderer.domElement.style.inset = '0';
 renderer.domElement.style.zIndex = '0';
 document.body.appendChild(renderer.domElement);
 
+/* ============================= POST-PROCESSING ============================= */
+/* Real EffectComposer pipeline: scene render -> UnrealBloomPass -> a custom
+   GLSL pass combining chromatic aberration, vignette and film grain. Every
+   addon is feature-detected — if any failed to load, we silently fall back
+   to a plain renderer.render() so the game never depends on this to run. */
+const GW_POST_SHADER = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uVignetteStrength: { value: 0.0 },
+    uAberration: { value: 0.0 },
+    uGrain: { value: 0.0 },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main(){
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uTime, uVignetteStrength, uAberration, uGrain;
+    varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+    void main(){
+      vec2 centered = vUv - 0.5;
+      float dist = length(centered);
+      vec2 dir = dist > 0.0001 ? centered/dist : vec2(0.0);
+      float shift = uAberration * dist;
+      float r = texture2D(tDiffuse, vUv - dir*shift).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv + dir*shift).b;
+      vec3 col = vec3(r,g,b);
+      float vig = smoothstep(0.35, 0.88, dist);
+      col *= 1.0 - vig*uVignetteStrength;
+      float grain = (hash(vUv*vec2(873.0,1321.0) + uTime) - 0.5) * uGrain;
+      col += grain;
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+};
+
+let composer=null, bloomPass=null, postPass=null, postFXLevel=2;
+function setupPostProcessing(){
+  if(!THREE.EffectComposer || !THREE.RenderPass) return;
+  try{
+    composer = new THREE.EffectComposer(renderer);
+    composer.setSize(window.innerWidth, window.innerHeight);
+    composer.addPass(new THREE.RenderPass(scene, camera));
+    if(THREE.UnrealBloomPass){
+      bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.45, 0.72);
+      composer.addPass(bloomPass);
+    }
+    if(THREE.ShaderPass){
+      postPass = new THREE.ShaderPass(GW_POST_SHADER);
+      postPass.renderToScreen = true;
+      composer.addPass(postPass);
+    }
+  } catch(err){
+    composer = null; // any addon mismatch: fall back to plain rendering, never crash the game over this
+  }
+}
+setupPostProcessing();
+
+function renderFrame(){
+  if(composer && postFXLevel>0){
+    if(postPass){
+      postPass.uniforms.uTime.value = performance.now()*0.0006;
+      const full = postFXLevel>=2;
+      postPass.uniforms.uVignetteStrength.value = full ? 0.48 : 0.0;
+      postPass.uniforms.uAberration.value = full ? 0.0022 : 0.0;
+      postPass.uniforms.uGrain.value = full ? 0.028 : 0.0;
+    }
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
+}
+
 window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if(composer) composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 const GRAPHICS_TIERS = {
-  baja:   { pixelRatio:1,   shadows:false, shadowSize:512  },
-  media:  { pixelRatio:1.5, shadows:true,  shadowSize:1024 },
-  alta:   { pixelRatio:2,   shadows:true,  shadowSize:2048 },
+  baja:   { pixelRatio:1,   shadows:false, shadowSize:512,  postFX:0 },
+  media:  { pixelRatio:1.5, shadows:true,  shadowSize:1024, postFX:1 },
+  alta:   { pixelRatio:2,   shadows:true,  shadowSize:2048, postFX:2 },
 };
 let shadowMapSize = 2048;
 function applyGraphicsQuality(quality){
@@ -33,6 +114,11 @@ function applyGraphicsQuality(quality){
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, t.pixelRatio));
   renderer.shadowMap.enabled = t.shadows;
   shadowMapSize = t.shadowSize;
+  postFXLevel = t.postFX;
+  if(composer){
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(window.innerWidth, window.innerHeight);
+  }
 }
 
 const E = {
@@ -596,6 +682,7 @@ function killBot(bot, killerKind, killerRef, isMelee){
   if(killerKind==='player'){
     E.player.kills++;
     if(GW.Effects) GW.Effects.spawnKillFlash();
+    onPlayerStreakKill();
   }
   if(E.mode) E.mode.onCombatantKilled('bot', bot, killerKind, killerRef);
 }
@@ -614,6 +701,159 @@ E.botMuzzleFlash = function(pos){
 };
 const botFlashLight = new THREE.PointLight(0xffaa55,0,5,2);
 scene.add(botFlashLight);
+
+/* ============================= KILLSTREAKS ============================= */
+const UAV_THRESHOLD = 3, AIRSTRIKE_THRESHOLD = 6, UAV_DURATION = 25;
+const EXPLOSION_RADIUS = 9, EXPLOSION_MAX_DMG = 140;
+E.streaks = { count:0, uavReady:false, airstrikeReady:false, uavTimeLeft:0 };
+E.killstreaksEnabled = false;
+let streakRequested = false, shakeAmount = 0;
+const explosionLight = new THREE.PointLight(0xff8822,0,18,2);
+scene.add(explosionLight);
+
+function resetStreak(){
+  E.streaks.count = 0; E.streaks.uavReady = false; E.streaks.airstrikeReady = false;
+}
+function onPlayerStreakKill(){
+  E.streaks.count++;
+  if(E.streaks.count>=UAV_THRESHOLD) E.streaks.uavReady = true;
+  if(E.streaks.count>=AIRSTRIKE_THRESHOLD) E.streaks.airstrikeReady = true;
+}
+
+function activateUAV(){
+  E.streaks.uavTimeLeft = UAV_DURATION;
+  E.showBanner('UAV ACTIVADO', 'Enemigos revelados en el radar', 2000);
+  GW.Audio.playBeep(650,0.22);
+}
+
+function buildPlaneMesh(){
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({color:0x3a4048, roughness:0.4, metalness:0.6});
+  const fuselage = new THREE.Mesh(new THREE.BoxGeometry(1.0,0.9,6.5), bodyMat);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(9,0.25,1.6), bodyMat);
+  wing.position.z = 0.3;
+  const tailWing = new THREE.Mesh(new THREE.BoxGeometry(3.2,0.2,1), bodyMat);
+  tailWing.position.set(0,0.2,-2.9);
+  const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.2,1.1,1.1), bodyMat);
+  tailFin.position.set(0,0.7,-2.9);
+  g.add(fuselage,wing,tailWing,tailFin);
+  g.traverse(o=>{ if(o.isMesh){ o.castShadow=false; o.receiveShadow=false; } });
+  return g;
+}
+
+const activeStrikes = [], activeBombs = [];
+function spawnAirstrikePlane(targetX, targetZ){
+  const dir = new THREE.Vector3(Math.random()*2-1, 0, Math.random()*2-1).normalize();
+  const altitude = 34, half = 75, duration = 6.0;
+  const start = new THREE.Vector3(targetX - dir.x*half, altitude, targetZ - dir.z*half);
+  const end = new THREE.Vector3(targetX + dir.x*half, altitude, targetZ + dir.z*half);
+  const plane = buildPlaneMesh();
+  plane.position.copy(start);
+  plane.lookAt(end);
+  scene.add(plane);
+  const bombs = [0.42,0.48,0.54,0.6].map(f=>({
+    t: duration*f, x: targetX+(Math.random()*10-5), z: targetZ+(Math.random()*10-5), dropped:false
+  }));
+  activeStrikes.push({ plane, start, end, duration, elapsed:0, bombs });
+}
+
+function spawnBomb(x,z,startY){
+  const geo = new THREE.CylinderGeometry(0.1,0.14,0.55,8);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:0x1c1c1c, roughness:0.5, metalness:0.4}));
+  mesh.rotation.x = Math.PI/2;
+  mesh.position.set(x, startY, z);
+  scene.add(mesh);
+  const groundY = raycastGroundY(x,z);
+  activeBombs.push({ mesh, x, z, startY, groundY, fallTime:0.7, elapsed:0 });
+}
+
+function explodeAt(x,z){
+  const groundY = raycastGroundY(x,z);
+  const pos = new THREE.Vector3(x, groundY+0.5, z);
+  if(GW.Effects) GW.Effects.spawnExplosion(pos);
+  GW.Audio.playBoom(0.6);
+
+  explosionLight.position.set(x, groundY+2, z);
+  explosionLight.intensity = 9;
+  setTimeout(()=>{ explosionLight.intensity=0; }, 160);
+
+  const distToPlayer = playerRig.position.distanceTo(pos);
+  if(distToPlayer < 40) shakeAmount = Math.max(shakeAmount, (1-distToPlayer/40)*0.07);
+
+  E.bots.forEach(b=>{
+    if(!b.alive) return;
+    const d = Math.hypot(b.group.position.x-x, b.group.position.z-z);
+    if(d < EXPLOSION_RADIUS){
+      const dmg = EXPLOSION_MAX_DMG * (1-d/EXPLOSION_RADIUS);
+      const died = GW.Bots.damage(b, dmg);
+      if(died) killBot(b, 'player', null);
+    }
+  });
+  if(E.player.alive){
+    const pd = Math.hypot(playerRig.position.x-x, playerRig.position.z-z);
+    if(pd < EXPLOSION_RADIUS) E.damagePlayer(EXPLOSION_MAX_DMG*0.55*(1-pd/EXPLOSION_RADIUS), pos);
+  }
+}
+
+function updateAirstrikes(dt){
+  for(let i=activeStrikes.length-1;i>=0;i--){
+    const s = activeStrikes[i];
+    s.elapsed += dt;
+    const t = Math.min(1, s.elapsed/s.duration);
+    s.plane.position.lerpVectors(s.start, s.end, t);
+    s.bombs.forEach(b=>{
+      if(!b.dropped && s.elapsed>=b.t){ b.dropped=true; spawnBomb(b.x,b.z,s.plane.position.y); }
+    });
+    if(t>=1){
+      scene.remove(s.plane);
+      s.plane.traverse(o=>{ if(o.isMesh) o.geometry.dispose(); });
+      activeStrikes.splice(i,1);
+    }
+  }
+  for(let i=activeBombs.length-1;i>=0;i--){
+    const b = activeBombs[i];
+    b.elapsed += dt;
+    const t = Math.min(1, b.elapsed/b.fallTime);
+    b.mesh.position.y = THREE.MathUtils.lerp(b.startY, b.groundY+0.2, t*t);
+    if(t>=1){
+      scene.remove(b.mesh); b.mesh.geometry.dispose();
+      activeBombs.splice(i,1);
+      explodeAt(b.x, b.z);
+    }
+  }
+}
+
+function triggerAirstrike(){
+  E.showBanner('ATAQUE AÉREO', 'Incoming...', 1800);
+  GW.Audio.playBoom(0.25);
+  const aliveEnemies = E.bots.filter(b=>b.alive && GW.Bots.hostile(E.player.team,b.team));
+  let cx=0, cz=0;
+  if(aliveEnemies.length>0){
+    aliveEnemies.forEach(b=>{ cx+=b.group.position.x; cz+=b.group.position.z; });
+    cx/=aliveEnemies.length; cz/=aliveEnemies.length;
+  } else {
+    const dir = new THREE.Vector3(); camera.getWorldDirection(dir);
+    cx = playerRig.position.x + dir.x*15; cz = playerRig.position.z + dir.z*15;
+  }
+  spawnAirstrikePlane(cx, cz);
+}
+
+function tryUseStreak(){
+  if(!E.killstreaksEnabled || !E.player.alive || E.frozen) return;
+  if(E.streaks.airstrikeReady){ E.streaks.airstrikeReady=false; triggerAirstrike(); }
+  else if(E.streaks.uavReady){ E.streaks.uavReady=false; activateUAV(); }
+}
+
+function updateStreakHud(){
+  const el = document.getElementById('streakHud');
+  if(!el || !E.killstreaksEnabled) { if(el) el.style.display='none'; return; }
+  el.style.display = 'block';
+  let label, pct;
+  if(E.streaks.airstrikeReady){ label='[Q] ATAQUE AÉREO LISTO'; pct=100; }
+  else if(E.streaks.uavReady){ label='[Q] UAV LISTO'; pct=Math.min(100, E.streaks.count/AIRSTRIKE_THRESHOLD*100); }
+  else { label = `RACHA ${E.streaks.count}/${UAV_THRESHOLD}`; pct = Math.min(100, E.streaks.count/UAV_THRESHOLD*100); }
+  el.innerHTML = `<div class="streak-label">${label}</div><div class="streak-bar"><i style="width:${pct}%"></i></div>`;
+}
 
 let hitDirTimeout=null;
 function showHitDirection(attackerPos){
@@ -641,6 +881,7 @@ E.damagePlayer = function(amount, attackerPos){
     E.player.health = 0;
     E.player.alive = false;
     E.player.deaths++;
+    resetStreak();
     showCenterMsg('ELIMINADO', E.allowRespawn ? 'Reapareciendo...' : 'Esperando fin de la ronda');
     if(E.mode) E.mode.onCombatantKilled('player', null, 'bot', null);
     if(E.allowRespawn){ const myMatchId = E.matchId; setTimeout(()=>{ if(E.matchId===myMatchId) respawnPlayer(); }, 2200); }
@@ -760,6 +1001,7 @@ document.addEventListener('keydown',(e)=>{
   if(e.code==='Space'){ e.preventDefault(); jumpRequested=true; }
   if(e.code==='KeyR') startReload();
   if(e.code==='KeyV') meleeRequested = true;
+  if(e.code==='KeyQ' && !e.repeat) streakRequested = true;
   if(!e.repeat && DODGE_KEYS[e.code]){
     const now = performance.now();
     if(now - lastTapTime[e.code] < DOUBLE_TAP_WINDOW) dodgeRequestCode = e.code;
@@ -892,9 +1134,11 @@ function updateHUD(dt){
 
 const mmCanvas = document.getElementById('minimap');
 const mmCtx = mmCanvas ? mmCanvas.getContext('2d') : null;
-const MM_RANGE = 55;
+const MM_BASE_RANGE = 55, MM_UAV_RANGE = 140;
 function drawMinimap(){
   if(!mmCtx) return;
+  const uavActive = E.streaks.uavTimeLeft>0;
+  const mmRange = uavActive ? MM_UAV_RANGE : MM_BASE_RANGE;
   mmCtx.clearRect(0,0,170,170);
   mmCtx.fillStyle = 'rgba(20,26,16,0.5)'; mmCtx.fillRect(0,0,170,170);
   mmCtx.strokeStyle = 'rgba(120,150,100,0.15)';
@@ -905,13 +1149,23 @@ function drawMinimap(){
   const px = playerRig.position.x, pz = playerRig.position.z;
   const cos = Math.cos(-yaw), sin = Math.sin(-yaw);
 
+  if(uavActive){
+    const sweepAngle = (performance.now()*0.0018) % (Math.PI*2);
+    mmCtx.save();
+    mmCtx.translate(85,85);
+    mmCtx.rotate(sweepAngle);
+    mmCtx.fillStyle = 'rgba(59,160,255,0.22)';
+    mmCtx.beginPath(); mmCtx.moveTo(0,0); mmCtx.arc(0,0,82,-0.35,0); mmCtx.closePath(); mmCtx.fill();
+    mmCtx.restore();
+  }
+
   E.bots.forEach(b=>{
     if(!b.alive) return;
     const dx = b.group.position.x-px, dz = b.group.position.z-pz;
     const d = Math.sqrt(dx*dx+dz*dz);
-    if(d>MM_RANGE) return;
+    if(d>mmRange) return;
     const rx = dx*cos-dz*sin, rz = dx*sin+dz*cos;
-    const mx = 85+(rx/MM_RANGE)*80, my = 85+(rz/MM_RANGE)*80;
+    const mx = 85+(rx/mmRange)*80, my = 85+(rz/mmRange)*80;
     const isAlly = !GW.Bots.hostile(E.player.team, b.team);
     mmCtx.fillStyle = isAlly ? '#3ba0ff' : (b.state==='attack'?'#ff3b30':(b.state==='chase'?'#ff9a30':(b.state==='search'?'#ffd23b':'#c96b3a')));
     mmCtx.beginPath(); mmCtx.arc(mx,my,4,0,Math.PI*2); mmCtx.fill();
@@ -921,9 +1175,9 @@ function drawMinimap(){
     const s = E.mapData.bombSite;
     const dx = s.x-px, dz = s.z-pz;
     const d = Math.sqrt(dx*dx+dz*dz);
-    if(d<MM_RANGE){
+    if(d<mmRange){
       const rx = dx*cos-dz*sin, rz = dx*sin+dz*cos;
-      const mx = 85+(rx/MM_RANGE)*80, my = 85+(rz/MM_RANGE)*80;
+      const mx = 85+(rx/mmRange)*80, my = 85+(rz/mmRange)*80;
       mmCtx.fillStyle = '#ffd23b';
       mmCtx.save(); mmCtx.translate(mx,my); mmCtx.rotate(Math.PI/4); mmCtx.fillRect(-4,-4,8,8); mmCtx.restore();
     }
@@ -932,7 +1186,7 @@ function drawMinimap(){
   mmCtx.save(); mmCtx.translate(85,85); mmCtx.fillStyle = '#d2ffbe';
   mmCtx.beginPath(); mmCtx.moveTo(0,-8); mmCtx.lineTo(6,7); mmCtx.lineTo(-6,7); mmCtx.closePath(); mmCtx.fill();
   mmCtx.restore();
-  mmCtx.strokeStyle = 'rgba(140,180,120,0.4)';
+  mmCtx.strokeStyle = uavActive ? 'rgba(59,160,255,0.6)' : 'rgba(140,180,120,0.4)';
   mmCtx.beginPath(); mmCtx.arc(85,85,82,0,Math.PI*2); mmCtx.stroke();
 }
 
@@ -973,7 +1227,7 @@ let footstepTimer=0, footstepBobTimer=0, currentSpeedFactor=0;
 function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
-  if(!E.matchActive){ renderer.render(scene, camera); return; }
+  if(!E.matchActive){ renderFrame(); return; }
 
   updateDynamicObjects(dt);
   updateAmmoCrates(dt);
@@ -1022,10 +1276,16 @@ function animate(){
     if(def.auto && mouseLeftDown) fireWeapon();
     else if(!def.auto && firePressedEdge) fireWeapon();
     if(meleeRequested) performMelee();
+    if(streakRequested) tryUseStreak();
   }
-  firePressedEdge=false; meleeRequested=false;
+  firePressedEdge=false; meleeRequested=false; streakRequested=false;
 
   updateMelee(dt);
+  if(!E.frozen) updateAirstrikes(dt);
+  if(E.streaks.uavTimeLeft>0) E.streaks.uavTimeLeft = Math.max(0, E.streaks.uavTimeLeft-dt);
+  updateStreakHud();
+  shakeAmount *= Math.max(0, 1-dt*4.5);
+  camera.rotation.z = (Math.random()*2-1)*shakeAmount*0.6;
 
   REST_POS.set(...def.rest); ADS_POS.set(...def.ads);
   const switchDip = switching ? Math.sin(Math.PI*Math.min(1,switchTimer/switchDuration))*0.42 : 0;
@@ -1069,10 +1329,10 @@ function animate(){
     E.player.health = Math.min(E.player.maxHealth, E.player.health + dt*12);
   }
 
-  pitchObj.rotation.x = pitch + recoilPitch;
+  pitchObj.rotation.x = pitch + recoilPitch + (Math.random()*2-1)*shakeAmount*0.4;
 
   updateHUD(dt);
-  renderer.render(scene, camera);
+  renderFrame();
 }
 
 function updatePlayer(dt){
@@ -1184,6 +1444,12 @@ E.startMatch = function(config){
   const minimapEl = document.getElementById('minimapWrap');
   if(minimapEl) minimapEl.style.display = config.showMinimap===false ? 'none' : '';
   adsToggleState = false;
+  E.killstreaksEnabled = config.modeId !== 'snd';
+  resetStreak();
+  E.streaks.uavTimeLeft = 0;
+  activeStrikes.forEach(s=>{ scene.remove(s.plane); s.plane.traverse(o=>{ if(o.isMesh) o.geometry.dispose(); }); });
+  activeBombs.forEach(b=>{ scene.remove(b.mesh); b.mesh.geometry.dispose(); });
+  activeStrikes.length = 0; activeBombs.length = 0;
   const mapDef = GW.getMap(config.mapId);
   loadMap(mapDef);
 
@@ -1233,6 +1499,9 @@ E.quitMatch = function(){
   E.matchActive = false;
   E.frozen = true;
   E.matchId++;
+  activeStrikes.forEach(s=>{ scene.remove(s.plane); s.plane.traverse(o=>{ if(o.isMesh) o.geometry.dispose(); }); });
+  activeBombs.forEach(b=>{ scene.remove(b.mesh); b.mesh.geometry.dispose(); });
+  activeStrikes.length = 0; activeBombs.length = 0;
   teardownMap();
 };
 

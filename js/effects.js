@@ -493,6 +493,22 @@ GW.Effects = (function(){
 
   function setGoreEnabled(v){ goreEnabled = !!v; }
 
+  // Big omnidirectional fiery burst for airstrike/explosion impacts — reuses
+  // the same pooled particle-burst system as bullet impacts (two overlapping
+  // bursts: a wide slow outer blast plus a brighter, faster inner flash).
+  function spawnExplosion(position){
+    ensureInit();
+    if(!inited) return;
+    spawnBurst(position, null, 0xffaa33, {
+      speedMin:4.5, speedMax:9.5, life:0.7, size:70, gravity:4.0, halfAngle:Math.PI,
+      blending: THREE.AdditiveBlending, opacityMul:1.0
+    });
+    spawnBurst(position, null, 0xfff2c0, {
+      speedMin:2.0, speedMax:5.0, life:0.32, size:95, gravity:1.0, halfAngle:Math.PI,
+      blending: THREE.AdditiveBlending, opacityMul:1.0
+    });
+  }
+
   return {
     init: init,
     update: update,
@@ -501,7 +517,8 @@ GW.Effects = (function(){
     spawnKillFlash: spawnKillFlash,
     spawnMeleeSlash: spawnMeleeSlash,
     spawnBloodPool: spawnBloodPoolPublic,
-    setGoreEnabled: setGoreEnabled
+    setGoreEnabled: setGoreEnabled,
+    spawnExplosion: spawnExplosion
   };
 
 })();

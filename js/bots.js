@@ -138,6 +138,11 @@ GW.Bots = (function(){
     bot.group.position.set(spawn.x,0,spawn.z);
     bot.torsoPivot.rotation.set(0,0,0);
     bot.torsoPivot.position.y = 1.15;
+    // Undo any ragdoll flop left over from the last death.
+    bot.legL.rotation.set(0,0,0);
+    bot.legR.rotation.set(0,0,0);
+    bot.armL.rotation.set(0,0,0);
+    bot.armR.rotation.set(0,0,0);
     bot.waypoints = [
       spawn.clone(),
       new THREE.Vector3(spawn.x + (Math.random()*10-5), 0, spawn.z + (Math.random()*10-5)),
@@ -213,13 +218,25 @@ GW.Bots = (function(){
     const E = GW.engine;
     if(!bot.alive){
       bot.deathTimer += dt;
-      if(bot.deathTimer < 0.6){
-        const t = bot.deathTimer/0.6;
-        bot.group.rotation.z = -Math.PI/2 * t;
-        bot.group.position.y = -0.3*t;
-      } else if(bot.deathTimer > 2.2 && bot.group.visible){
+      const rd = bot.ragdoll;
+      if(rd && bot.deathTimer < 1.3){
+        rd.angle = Math.min(Math.PI*0.54, rd.angle + rd.angVel*dt);
+        rd.angVel *= Math.max(0, 1 - dt*1.3);
+        rd.bounce *= Math.max(0, 1 - dt*6.5);
+        bot.group.rotation.set(0,0,0);
+        bot.group.rotateOnAxis(rd.fallAxis, rd.angle);
+        const floorY = E.raycastGroundY(bot.group.position.x, bot.group.position.z);
+        const sink = Math.sin(Math.min(rd.angle, Math.PI/2)) * 0.5;
+        bot.group.position.y = floorY - sink + rd.bounce;
+        rd.limbs.forEach(L=>{
+          L.obj.rotation.x += L.vx*dt;
+          L.obj.rotation.z += L.vz*dt;
+          L.vx *= Math.max(0, 1-dt*2.6);
+          L.vz *= Math.max(0, 1-dt*2.6);
+        });
+      } else if(bot.deathTimer > 2.6 && bot.group.visible){
         bot.group.visible = false;
-      } else if(E.allowBotRespawn && bot.deathTimer > 3.4){
+      } else if(E.allowBotRespawn && bot.deathTimer > 3.8){
         respawn(bot);
       }
       return;
@@ -361,6 +378,20 @@ GW.Bots = (function(){
     bot.state = 'dead';
     bot.deathTimer = 0;
     bot.currentTarget = null;
+    // Ragdoll: the whole body topples along a random horizontal axis while
+    // each limb spins loosely on its own and everything damps out as it
+    // settles, instead of a single canned rotate-and-sink animation.
+    const fallAxis = new THREE.Vector3(Math.random()*2-1, 0, Math.random()*2-1);
+    if(fallAxis.lengthSq() < 0.01) fallAxis.set(1,0,0);
+    fallAxis.normalize();
+    bot.ragdoll = {
+      fallAxis, angle:0,
+      angVel: 3.2 + Math.random()*2.2,
+      bounce: 0.28 + Math.random()*0.18,
+      limbs: [bot.torsoPivot, bot.legL, bot.legR, bot.armL, bot.armR].map(obj=>({
+        obj, vx:(Math.random()*2-1)*4.5, vz:(Math.random()*2-1)*4.5
+      }))
+    };
   }
 
   return { create, respawn, update, damage, kill, hostile, DIFFICULTY };
