@@ -570,6 +570,7 @@ function selectSlot(slot){
   switching=true; switchTimer=0; switchSwapped=false;
   E._pendingSlot = slot;
   weaponState.reloading=false;
+  weaponState.isADS=false; weaponState.adsAmount=0;
   const ind = document.getElementById('reloadIndicator'); if(ind) ind.style.opacity='0';
   GW.Audio.playSwitch();
 }
@@ -893,6 +894,7 @@ function respawnPlayer(){
   E.player.health = E.player.maxHealth;
   E.player.alive = true;
   adsToggleState = false;
+  weaponState.reloading = false; weaponState.isADS = false; weaponState.adsAmount = 0;
   const list = E.player.team==='A' ? (E.mapData.spawnsA||E.mapData.spawnsFFA) : (E.mapData.spawnsB||E.mapData.spawnsFFA);
   const sp = list[Math.floor(Math.random()*list.length)];
   playerRig.position.set(sp[0],0,sp[1]);
@@ -903,6 +905,7 @@ E.respawnAllForRound = function(){
   E.bots.forEach(b=>GW.Bots.respawn(b));
   E.player.health = E.player.maxHealth; E.player.alive = true;
   adsToggleState = false;
+  weaponState.reloading = false; weaponState.isADS = false; weaponState.adsAmount = 0;
   const list = E.player.team==='A' ? E.mapData.spawnsA : E.mapData.spawnsB;
   const sp = list[Math.floor(Math.random()*list.length)];
   playerRig.position.set(sp[0],0,sp[1]);
@@ -1300,18 +1303,19 @@ function animate(){
   const idleT = performance.now()*0.0012;
   // Weapon sway/bob synced to the same footstep phase driving the camera bob,
   // scaled by movement intensity and damped while aiming down sights.
-  const walkIntensity = Math.min(1.3, currentSpeedFactor) * (1 - weaponState.adsAmount*0.85);
+  const swaySuppress = 1 - weaponState.adsAmount;
+  const walkIntensity = Math.min(1.3, currentSpeedFactor) * swaySuppress;
   const walkBobX = Math.sin(footstepBobTimer)*0.014*walkIntensity;
   const walkBobY = Math.abs(Math.sin(footstepBobTimer))*0.01*walkIntensity;
   const walkSwayZ = Math.sin(footstepBobTimer*0.5)*0.018*walkIntensity;
   if(!meleeActive){
     weaponModel.position.set(
-      Math.sin(idleT)*0.004 + walkBobX,
-      Math.sin(idleT*1.3)*0.0035 + walkBobY - weaponKick*0.02,
+      Math.sin(idleT)*0.004*swaySuppress + walkBobX,
+      Math.sin(idleT*1.3)*0.0035*swaySuppress + walkBobY - weaponKick*0.02,
       -weaponKick*0.12
     );
     weaponModel.rotation.x = -weaponKick*0.16 + reloadTilt;
-    weaponModel.rotation.z = Math.sin(idleT*0.7)*0.01 + walkSwayZ;
+    weaponModel.rotation.z = Math.sin(idleT*0.7)*0.01*swaySuppress + walkSwayZ;
   }
 
   const sinceShot = performance.now() - lastShotAt;
@@ -1433,10 +1437,24 @@ E.freeze = function(){
   if(document.exitPointerLock) document.exitPointerLock();
 };
 
+E.applyCrosshairSettings = function(config){
+  const hudEl = document.getElementById('hud');
+  if(!hudEl) return;
+  hudEl.style.setProperty('--ch-color', (config && config.crosshairColor) || '#d2ffbe');
+  hudEl.style.setProperty('--ch-scale', (config && config.crosshairSize) || 1.0);
+  const chEl = document.getElementById('crosshair');
+  if(chEl){
+    chEl.classList.remove('ch-style-cross','ch-style-dot','ch-style-circle');
+    const style = (config && config.crosshairStyle) || 'crossdot';
+    if(style==='cross'||style==='dot'||style==='circle') chEl.classList.add('ch-style-'+style);
+  }
+};
+
 E.startMatch = function(config){
   E.matchId++;
   E.config = config;
   applyGraphicsQuality(config.graphicsQuality);
+  E.applyCrosshairSettings(config);
   BASE_FOV = config.fov || 75;
   camera.fov = BASE_FOV;
   camera.updateProjectionMatrix();
@@ -1470,12 +1488,16 @@ E.startMatch = function(config){
   const spawnsA = E.mapData.spawnsA || spawnsFFA;
   const spawnsB = E.mapData.spawnsB || spawnsFFA;
 
-  for(let i=0;i<config.botCount;i++){
-    let team;
-    if(teamsMode){ team = i < Math.floor(config.botCount/2) ? 'A' : 'B'; }
-    else team = 'B';
-    const list = team==='A' ? spawnsA : spawnsB;
-    E.bots.push(GW.Bots.create(team, config.difficulty, teamsMode ? list : spawnsFFA));
+  if(config.modeId !== 'campaign'){
+    // Campaign scripts its own wave-by-wave bot roster (see js/campaign.js);
+    // it must start with zero pre-spawned enemies.
+    for(let i=0;i<config.botCount;i++){
+      let team;
+      if(teamsMode){ team = i < Math.floor(config.botCount/2) ? 'A' : 'B'; }
+      else team = 'B';
+      const list = team==='A' ? spawnsA : spawnsB;
+      E.bots.push(GW.Bots.create(team, config.difficulty, teamsMode ? list : spawnsFFA));
+    }
   }
 
   const sp = spawnsA[Math.floor(Math.random()*spawnsA.length)];

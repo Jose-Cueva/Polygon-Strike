@@ -54,6 +54,12 @@
 
   <div id="centerMsg">ELIMINADO<span class="sub" id="centerMsgSub"></span></div>
   <div id="banner"><div class="b-main">NIVEL 2</div><div class="b-sub"></div></div>
+
+  <div id="dialoguePanel">
+    <div id="dialogueSpeaker"></div>
+    <div id="dialogueText"></div>
+    <div id="dialogueHint">[E] CONTINUAR</div>
+  </div>
 </div>
 
 <div id="playPrompt" class="overlay">
@@ -170,6 +176,33 @@
         </div>
       </div>
 
+      <div class="section-title">MIRA / RETÍCULA</div>
+      <div class="section-title sub">Estilo</div>
+      <div class="setting-row">
+        <div class="toggle-row" id="crosshairStyleButtons">
+          <div class="dbtn" data-val="cross">CRUZ</div>
+          <div class="dbtn active" data-val="crossdot">CRUZ+PUNTO</div>
+          <div class="dbtn" data-val="dot">PUNTO</div>
+          <div class="dbtn" data-val="circle">CÍRCULO</div>
+        </div>
+      </div>
+      <div class="section-title sub">Color</div>
+      <div class="setting-row">
+        <div class="toggle-row" id="crosshairColorButtons">
+          <div class="ch-swatch active" data-val="#d2ffbe" style="background:#d2ffbe;"></div>
+          <div class="ch-swatch" data-val="#ff3b30" style="background:#ff3b30;"></div>
+          <div class="ch-swatch" data-val="#30e3ff" style="background:#30e3ff;"></div>
+          <div class="ch-swatch" data-val="#fff23b" style="background:#fff23b;"></div>
+          <div class="ch-swatch" data-val="#ff30d9" style="background:#ff30d9;"></div>
+          <div class="ch-swatch" data-val="#ffffff" style="background:#ffffff;"></div>
+        </div>
+      </div>
+      <div class="section-title sub">Tamaño</div>
+      <div class="setting-row">
+        <input type="range" id="crosshairSizeRange" min="0.6" max="1.8" step="0.1" value="1">
+        <span id="crosshairSizeVal">1.0x</span>
+      </div>
+
       <div class="section-title">AUDIO</div>
       <div class="section-title sub">Volumen</div>
       <div class="setting-row">
@@ -240,6 +273,7 @@
 <script src="js/maps.js"></script>
 <script src="js/bots.js"></script>
 <script src="js/modes.js"></script>
+<script src="js/campaign.js"></script>
 <script src="js/game.js"></script>
 <script src="js/effects.js"></script>
 <script src="js/menu.js"></script>

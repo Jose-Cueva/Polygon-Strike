@@ -6,7 +6,8 @@ GW.menuHooks = GW.menuHooks || {};
 const cfg = {
   modeId:'ffa', mapId:'industrial', botCount:8, difficulty:'normal', primaryWeapon:'rifle',
   sensitivity:1.0, masterVolume:70, timeLimitMin:8, friendlyFire:false, invertY:false,
-  fov:75, graphicsQuality:'alta', gore:true, showMinimap:true, adsMode:'hold'
+  fov:75, graphicsQuality:'alta', gore:true, showMinimap:true, adsMode:'hold',
+  crosshairStyle:'crossdot', crosshairColor:'#d2ffbe', crosshairSize:1.0
 };
 let matchEndShown = false;
 
@@ -35,7 +36,8 @@ function renderModeList(){
     </div>`).join('');
 }
 function renderMapList(){
-  el('mapList').innerHTML = GW.MAPS.map(m=>`
+  const maps = cfg.modeId==='campaign' ? GW.MAPS.filter(m=>m.id==='campaign') : GW.MAPS.filter(m=>m.id!=='campaign');
+  el('mapList').innerHTML = maps.map(m=>`
     <div class="card ${m.id===cfg.mapId?'active':''}" data-map="${m.id}">
       <div class="map-swatch" style="background:linear-gradient(135deg, ${m.skyColors[0]}, ${m.groundColor})"></div>
       <div class="card-title">${m.name}</div>
@@ -108,18 +110,36 @@ function renderMinimap(){
   });
 }
 
+function renderCrosshairStyle(){
+  el('crosshairStyleButtons').querySelectorAll('.dbtn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.val===cfg.crosshairStyle);
+  });
+}
+function renderCrosshairColor(){
+  el('crosshairColorButtons').querySelectorAll('.ch-swatch').forEach(b=>{
+    b.classList.toggle('active', b.dataset.val===cfg.crosshairColor);
+  });
+}
+function renderCrosshairSize(){
+  el('crosshairSizeRange').value = cfg.crosshairSize;
+  el('crosshairSizeVal').textContent = cfg.crosshairSize.toFixed(1)+'x';
+}
+
 function renderSetup(){
   renderModeList(); renderMapList(); renderWeaponList(); renderDifficulty(); renderBotCount();
   renderSensitivity(); renderVolume(); renderTimeLimit(); renderFriendlyFire(); renderInvertY();
   renderAdsMode(); renderFov(); renderGraphicsQuality(); renderGore(); renderMinimap();
+  renderCrosshairStyle(); renderCrosshairColor(); renderCrosshairSize();
   showTab('partida');
 }
 
 el('modeList').addEventListener('click', (e)=>{
   const card = e.target.closest('.card'); if(!card) return;
   cfg.modeId = card.dataset.mode;
+  if(cfg.modeId==='campaign') cfg.mapId = 'campaign';
+  else if(cfg.mapId==='campaign') cfg.mapId = 'industrial';
   GW.Audio.playUIClick();
-  renderModeList(); renderWeaponList();
+  renderModeList(); renderMapList(); renderWeaponList();
 });
 el('mapList').addEventListener('click', (e)=>{
   const card = e.target.closest('.card'); if(!card) return;
@@ -195,6 +215,25 @@ el('minimapButtons').addEventListener('click', (e)=>{
   cfg.showMinimap = btn.dataset.val==='on';
   GW.Audio.playUIClick();
   renderMinimap();
+});
+el('crosshairStyleButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.dbtn'); if(!btn) return;
+  cfg.crosshairStyle = btn.dataset.val;
+  GW.Audio.playUIClick();
+  renderCrosshairStyle();
+  if(GW.engine && GW.engine.applyCrosshairSettings) GW.engine.applyCrosshairSettings(cfg);
+});
+el('crosshairColorButtons').addEventListener('click', (e)=>{
+  const btn = e.target.closest('.ch-swatch'); if(!btn) return;
+  cfg.crosshairColor = btn.dataset.val;
+  GW.Audio.playUIClick();
+  renderCrosshairColor();
+  if(GW.engine && GW.engine.applyCrosshairSettings) GW.engine.applyCrosshairSettings(cfg);
+});
+el('crosshairSizeRange').addEventListener('input', (e)=>{
+  cfg.crosshairSize = parseFloat(e.target.value);
+  el('crosshairSizeVal').textContent = cfg.crosshairSize.toFixed(1)+'x';
+  if(GW.engine && GW.engine.applyCrosshairSettings) GW.engine.applyCrosshairSettings(cfg);
 });
 
 /* ---------------- Navigation ---------------- */

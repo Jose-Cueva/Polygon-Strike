@@ -188,6 +188,59 @@ function urban(E){
   };
 }
 
+function campaign(E){
+  // Long linear single-player mission map: a fortified valley pushing north
+  // from a rear camp, through a checkpoint trench and a container courtyard,
+  // into a walled compound, and finally an open final-stand plateau near the
+  // extraction radio tower. Built for GW.MODE_FACTORIES.campaign's scripted
+  // waves and NPC checkpoints (see js/campaign.js for the exact coordinates).
+
+  // --- Camp (z -58..-42): safe rear area, no enemies ---
+  E.addBox(6,2.2,5,-8,1.1,-52,'tent',{rotY:-0.2});
+  E.addBox(6,2.2,5, 8,1.1,-52,'tent',{rotY:0.2});
+  [[-3,-48],[3,-48],[-5,-56],[5,-56]].forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'crate'));
+  [[-9,-45],[9,-45]].forEach(p=>E.addBarrel(p[0],p[1]));
+
+  // --- Checkpoint trench (z -40..-18): zigzag low cover, wave 1 ---
+  const trench = [
+    [4,1.2,3,-8,0.6,-34,'dark',0],[4,1.2,3, 7,0.6,-30,'dark',0.15],
+    [3,1.2,3,-5,0.6,-24,'concrete',0.1],[3,1.2,3, 6,0.6,-21,'concrete',-0.1],
+    [4,1.4,3,-9,0.7,-27,'dark',0.3],[4,1.4,3, 9,0.7,-36,'dark',-0.2]
+  ];
+  trench.forEach(p=>E.addBox(p[0],p[1],p[2],p[3],p[4],p[5],p[6],{rotY:p[7]}));
+  [[-2,-30],[2,-22],[-6,-19]].forEach(p=>E.addBarrel(p[0],p[1]));
+
+  // --- Courtyard (z -14..8): container cluster, NPC checkpoint + wave 2 ---
+  const containers = [
+    [5,2.3,2.2,-9, 1.15,-2,'blue',   1.4],[5,2.3,2.2, 9, 1.15, 2,'orange', 1.4],
+    [5,2.2,2.1,-6, 1.1,  6,'green', -0.2],[5,2.2,2.1, 6, 1.1, -6,'dark',   0.2],
+    [4,2.1,2,   0, 1.05, 5,'orange',0.6]
+  ];
+  containers.forEach(p=>E.addBox(p[0],p[1],p[2],p[3],p[4],p[5],p[6],{rotY:p[7]}));
+  [[-4,0],[4,-3],[0,-9]].forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'crate'));
+
+  // --- Compound (z 12..34): walled yard, elevated watch nest, wave 3 ---
+  E.addBox(2,3.4,22,-16,1.7,23,'concrete');
+  E.addBox(2,3.4,22, 16,1.7,23,'concrete');
+  [[-7,16],[7,20],[-6,28],[6,30],[0,24]].forEach(p=>E.addBox(2.6,1.6,2.6,p[0],0.8,p[1],'dark',{rotY:0.3}));
+  E.addBox(5,3,5,10,1.5,14,'concrete');
+  E.addRamp({x:10, z:9, width:4, length:6, height:3, rotY:Math.PI});
+
+  // --- Final stand (z 38..54): open plateau, extraction tower, wave 4 ---
+  const bunkers = [
+    [-8,44],[8,44],[-10,50],[10,50],[0,40]
+  ];
+  bunkers.forEach(p=>E.addBox(3,1.6,2.6,p[0],0.8,p[1],'concrete',{rotY:(p[0]*p[1])%2}));
+  [[-4,47],[4,52]].forEach(p=>E.addBarrel(p[0],p[1]));
+  E.addTower(0,60);
+
+  return {
+    spawnsFFA:[[0,-56]],
+    spawnsA:[[0,-56]],
+    ammoCrates:[[0,-27],[0,-1],[0,25],[0,46]]
+  };
+}
+
 GW.MAPS = [
   { id:'industrial', name:'DISTRITO INDUSTRIAL', desc:'Laberinto denso de contenedores con lineas de combate cortas y una torre de radar.',
     size:100, groundColor:'#5c6650', fogColor:0x93a186, fogDensity:0.011,
@@ -197,7 +250,10 @@ GW.MAPS = [
     skyColors:['#7f9fc4','#cfc79a','#e2c98f','#b98f57'], build:desert },
   { id:'urban', name:'COMPLEJO URBANO', desc:'Tres carriles verticales entre bloques de edificios convergen en una plaza central.',
     size:95, groundColor:'#6a6a62', fogColor:0x8b8b83, fogDensity:0.014,
-    skyColors:['#42566e','#6f7a78','#a3a294','#6f6455'], build:urban }
+    skyColors:['#42566e','#6f7a78','#a3a294','#6f6455'], build:urban },
+  { id:'campaign', name:'VALLE TRUENO ROJO', desc:'Mapa largo de un solo jugador: avanza desde el campamento hasta la torre de extracción.',
+    size:70, groundColor:'#565c48', fogColor:0x8f9584, fogDensity:0.016,
+    skyColors:['#3d4f5e','#71766c','#a9a487','#7a6a52'], build:campaign }
 ];
 
 GW.getMap = function(id){ return GW.MAPS.find(m=>m.id===id) || GW.MAPS[0]; };
