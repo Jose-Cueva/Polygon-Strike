@@ -338,7 +338,7 @@ GW.Bots = (function(){
         dir.normalize();
         bot.facing = Math.atan2(dir.x, dir.z);
         const posObj = { x: bot.group.position.x + dir.x*speed*dt, z: bot.group.position.z + dir.z*speed*dt };
-        E.resolveHorizontalCollision(posObj, bot.group.position.y, BOT_RADIUS);
+        E.resolveHorizontalCollision(posObj, bot.group.position.y, BOT_RADIUS, 1.9);
         bot.group.position.x = posObj.x;
         bot.group.position.z = posObj.z;
         moving = true;
@@ -361,7 +361,7 @@ GW.Bots = (function(){
       bot.torsoPivot.position.y = THREE.MathUtils.lerp(bot.torsoPivot.position.y,1.15,Math.min(1,dt*6));
     }
 
-    bot.group.position.y = E.raycastGroundY(bot.group.position.x, bot.group.position.z);
+    bot.group.position.y = E.raycastGroundY(bot.group.position.x, bot.group.position.z, bot.group.position.y+1.6);
     bot.group.rotation.y = bot.facing;
     bot.pos.copy(bot.group.position);
     bot.group.updateMatrixWorld(true);

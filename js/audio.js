@@ -147,9 +147,54 @@ GW.Audio = (function(){
     src.connect(bp); bp.connect(g); g.connect(masterGain); src.start(t); src.stop(t+0.18);
   }
 
+  // Short filtered blip used as a "voice" tick while dialogue text types out.
+  function playBlip(freq, volume){
+    if(!actx) return;
+    const t = actx.currentTime;
+    const osc = actx.createOscillator(); osc.type='sawtooth';
+    osc.frequency.setValueAtTime(freq||220,t); osc.frequency.exponentialRampToValueAtTime((freq||220)*0.7, t+0.05);
+    const lp = actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 900;
+    const g = actx.createGain(); g.gain.setValueAtTime(volume||0.05,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.06);
+    osc.connect(lp); lp.connect(g); g.connect(masterGain); osc.start(t); osc.stop(t+0.07);
+  }
+
+  // Two-note rising "objective updated" sting.
+  function playObjective(){
+    if(!actx) return;
+    const t = actx.currentTime;
+    [[520,0],[780,0.11]].forEach(([f,d])=>{
+      const osc = actx.createOscillator(); osc.type='triangle'; osc.frequency.setValueAtTime(f,t+d);
+      const g = actx.createGain(); g.gain.setValueAtTime(0.16,t+d); g.gain.exponentialRampToValueAtTime(0.001,t+d+0.22);
+      osc.connect(g); g.connect(masterGain); osc.start(t+d); osc.stop(t+d+0.24);
+    });
+  }
+
+  // Low radio static burst used when a transmission opens.
+  function playRadio(){
+    if(!actx) return;
+    const t = actx.currentTime;
+    const src = actx.createBufferSource(); src.buffer = noiseBuffer(0.35);
+    const bp = actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 1400; bp.Q.value = 2.5;
+    const g = actx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.14,t+0.04); g.gain.exponentialRampToValueAtTime(0.001,t+0.33);
+    src.connect(bp); bp.connect(g); g.connect(masterGain); src.start(t); src.stop(t+0.35);
+  }
+
+  // Heavy rotor thump loop approximation: a few low pulses.
+  function playRotor(){
+    if(!actx) return;
+    const t = actx.currentTime;
+    for(let i=0;i<6;i++){
+      const d = i*0.12;
+      const osc = actx.createOscillator(); osc.type='sine'; osc.frequency.setValueAtTime(55,t+d);
+      const g = actx.createGain(); g.gain.setValueAtTime(0.0001,t+d); g.gain.exponentialRampToValueAtTime(0.25,t+d+0.02); g.gain.exponentialRampToValueAtTime(0.001,t+d+0.1);
+      osc.connect(g); g.connect(masterGain); osc.start(t+d); osc.stop(t+d+0.12);
+    }
+  }
+
   return {
     ensure, playShot, playBoom, playHitmarker, playReloadClick, playSwitch,
     playFootstep, playDamage, playPickup, playBeep, playChord, playUIClick, playMelee,
+    playBlip, playObjective, playRadio, playRotor,
     setVolume
   };
 })();

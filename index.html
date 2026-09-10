@@ -19,12 +19,13 @@
     <div id="scopeDot"></div>
   </div>
 
-  <div id="crosshair">
-    <div class="ch-line" id="ch-top"></div>
-    <div class="ch-line" id="ch-bottom"></div>
-    <div class="ch-line" id="ch-left"></div>
-    <div class="ch-line" id="ch-right"></div>
-    <div class="ch-line" id="ch-dot"></div>
+  <div id="crosshair" class="ch-root">
+    <div class="ch-line ch-top" id="ch-top"></div>
+    <div class="ch-line ch-bottom" id="ch-bottom"></div>
+    <div class="ch-line ch-left" id="ch-left"></div>
+    <div class="ch-line ch-right" id="ch-right"></div>
+    <div class="ch-line ch-dot" id="ch-dot"></div>
+    <div class="ch-line ch-circle" id="ch-circle"></div>
   </div>
   <div id="sightDot"><div id="sightDotRing"></div><div id="sightDotCenter"></div></div>
   <div id="hitmarker"></div>
@@ -47,6 +48,8 @@
 
   <div id="modeHud"></div>
   <div id="streakHud"></div>
+  <div id="bossBar"><div id="bossName">COMANDANTE</div><div class="boss-bar"><i id="bossFill"></i></div></div>
+  <div id="waypoint"><div id="wpArrow"></div><div id="wpDiamond"></div><div id="wpDist">0 m</div></div>
   <div id="interactPrompt"><div class="ip-label">MANTÉN [E]</div><div class="ip-bar"><div class="ip-fill"></div></div></div>
 
   <div id="minimapWrap"><canvas id="minimap" width="170" height="170"></canvas></div>
@@ -56,9 +59,22 @@
   <div id="banner"><div class="b-main">NIVEL 2</div><div class="b-sub"></div></div>
 
   <div id="dialoguePanel">
-    <div id="dialogueSpeaker"></div>
-    <div id="dialogueText"></div>
-    <div id="dialogueHint">[E] CONTINUAR</div>
+    <div id="dialoguePortrait">CV</div>
+    <div class="dlg-body">
+      <div class="dlg-head"><span id="dialogueSpeaker"></span><span id="dialogueRole"></span><span id="dialogueProgress"></span></div>
+      <div id="dialogueText"></div>
+      <div id="dialogueHint">[E] CONTINUAR</div>
+    </div>
+  </div>
+
+  <div id="chapterCard">
+    <div class="cc-bar top"></div>
+    <div class="cc-text">
+      <div id="chapterKicker">OPERACIÓN TRUENO ROJO</div>
+      <div id="chapterTitle">CAPÍTULO 1 · EL VALLE</div>
+      <div id="chapterSub"></div>
+    </div>
+    <div class="cc-bar bottom"></div>
   </div>
 </div>
 
@@ -108,7 +124,11 @@
       <div class="tagline">ZONA DE ENTRENAMIENTO TÁCTICO</div>
     </div>
     <div class="menu-center">
-      <button class="menu-btn primary" id="btnPlay">JUGAR</button>
+      <button class="menu-btn primary" id="btnCampaign">CAMPAÑA</button>
+      <div class="menu-hint">Operación Trueno Rojo · misión de un jugador con historia</div>
+      <button class="menu-btn" id="btnPlay">PARTIDA CON BOTS</button>
+      <div class="menu-hint">Todos contra todos, equipos, búsqueda y destrucción, arsenal, horda</div>
+      <button class="menu-btn secondary" id="btnSettings">AJUSTES</button>
     </div>
     <div class="menu-foot">Three.js · Web Audio API · sin dependencias externas de recursos</div>
   </div>
@@ -141,10 +161,22 @@
         </div>
       </div>
 
-      <div class="section-title">NÚMERO DE BOTS</div>
-      <div class="setting-row">
-        <input type="range" id="botCountRange" min="4" max="16" step="2" value="8">
-        <span id="botCountVal">8</span>
+      <div id="botCountSection">
+        <div class="section-title">NÚMERO DE BOTS</div>
+        <div class="setting-row">
+          <input type="range" id="botCountRange" min="4" max="16" step="2" value="8">
+          <span id="botCountVal">8</span>
+        </div>
+      </div>
+      <div id="campaignBrief">
+        <div class="section-title">INFORME DE MISIÓN</div>
+        <div class="brief-box">
+          <div class="brief-row"><span>OPERACIÓN</span><b>TRUENO ROJO · CAPÍTULO 1</b></div>
+          <div class="brief-row"><span>ZONA</span><b>VALLE TRUENO ROJO</b></div>
+          <div class="brief-row"><span>OBJETIVOS</span><b>10 · 4 zonas hostiles · 1 comandante</b></div>
+          <div class="brief-row"><span>DURACIÓN</span><b>15–25 min</b></div>
+          <p>Avanza por el cañón desde el campamento hasta el helipuerto. Habla con tu escuadra, limpia cada zona, elimina al comandante Korvin y resiste hasta que llegue el helicóptero. La dificultad ajusta el número y la resistencia de los enemigos.</p>
+        </div>
       </div>
     </div>
 
@@ -177,6 +209,17 @@
       </div>
 
       <div class="section-title">MIRA / RETÍCULA</div>
+      <div id="crosshairPreview">
+        <div class="ch-root" id="chPreview">
+          <div class="ch-line ch-top"></div>
+          <div class="ch-line ch-bottom"></div>
+          <div class="ch-line ch-left"></div>
+          <div class="ch-line ch-right"></div>
+          <div class="ch-line ch-dot"></div>
+          <div class="ch-line ch-circle"></div>
+        </div>
+        <div class="chp-label">VISTA PREVIA</div>
+      </div>
       <div class="section-title sub">Estilo</div>
       <div class="setting-row">
         <div class="toggle-row" id="crosshairStyleButtons">
@@ -255,7 +298,7 @@
     </div>
 
     <div class="setup-footer">
-      <span style="color:var(--text-dim);font-size:12px;letter-spacing:1px;">En equipos, los bots se dividen entre tu escuadra y la enemiga.</span>
+      <span id="setupFootNote" style="color:var(--text-dim);font-size:12px;letter-spacing:1px;">En equipos, los bots se dividen entre tu escuadra y la enemiga.</span>
       <button class="menu-btn primary" id="btnStartMatch">INICIAR PARTIDA</button>
     </div>
   </div>

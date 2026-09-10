@@ -31,9 +31,17 @@ el('setupTabs').addEventListener('click', (e)=>{
 function renderModeList(){
   el('modeList').innerHTML = GW.MODE_META.map(m=>`
     <div class="card ${m.id===cfg.modeId?'active':''}" data-mode="${m.id}">
-      <div class="card-title">${m.name}</div>
+      <div class="card-title">${m.name}${m.badge?`<span class="card-badge">${m.badge}</span>`:''}</div>
       <div class="card-desc">${m.desc}</div>
     </div>`).join('');
+}
+function renderModeDependent(){
+  const campaign = cfg.modeId==='campaign';
+  el('botCountSection').style.display = campaign ? 'none' : '';
+  el('campaignBrief').style.display = campaign ? 'block' : 'none';
+  el('setupFootNote').textContent = campaign
+    ? 'La campaña define sus propias oleadas; la dificultad ajusta la cantidad y resistencia de los enemigos.'
+    : 'En equipos, los bots se dividen entre tu escuadra y la enemiga.';
 }
 function renderMapList(){
   const maps = cfg.modeId==='campaign' ? GW.MAPS.filter(m=>m.id==='campaign') : GW.MAPS.filter(m=>m.id!=='campaign');
@@ -130,6 +138,8 @@ function renderSetup(){
   renderSensitivity(); renderVolume(); renderTimeLimit(); renderFriendlyFire(); renderInvertY();
   renderAdsMode(); renderFov(); renderGraphicsQuality(); renderGore(); renderMinimap();
   renderCrosshairStyle(); renderCrosshairColor(); renderCrosshairSize();
+  renderModeDependent();
+  if(GW.engine && GW.engine.applyCrosshairSettings) GW.engine.applyCrosshairSettings(cfg);
   showTab('partida');
 }
 
@@ -139,7 +149,7 @@ el('modeList').addEventListener('click', (e)=>{
   if(cfg.modeId==='campaign') cfg.mapId = 'campaign';
   else if(cfg.mapId==='campaign') cfg.mapId = 'industrial';
   GW.Audio.playUIClick();
-  renderModeList(); renderMapList(); renderWeaponList();
+  renderModeList(); renderMapList(); renderWeaponList(); renderModeDependent();
 });
 el('mapList').addEventListener('click', (e)=>{
   const card = e.target.closest('.card'); if(!card) return;
@@ -239,8 +249,21 @@ el('crosshairSizeRange').addEventListener('input', (e)=>{
 /* ---------------- Navigation ---------------- */
 el('btnPlay').addEventListener('click', ()=>{
   GW.Audio.ensure(); GW.Audio.playUIClick();
+  if(cfg.modeId==='campaign'){ cfg.modeId = 'ffa'; cfg.mapId = 'industrial'; }
   renderSetup();
   showScreen('setup');
+});
+el('btnCampaign').addEventListener('click', ()=>{
+  GW.Audio.ensure(); GW.Audio.playUIClick();
+  cfg.modeId = 'campaign'; cfg.mapId = 'campaign';
+  renderSetup();
+  showScreen('setup');
+});
+el('btnSettings').addEventListener('click', ()=>{
+  GW.Audio.ensure(); GW.Audio.playUIClick();
+  renderSetup();
+  showScreen('setup');
+  showTab('ajustes');
 });
 el('btnBack').addEventListener('click', ()=>{ GW.Audio.playUIClick(); showScreen('main'); });
 el('btnStartMatch').addEventListener('click', startMatchFlow);
@@ -270,7 +293,9 @@ el('playPromptBtn').addEventListener('click', ()=>{ GW.engine.requestPointerLock
 
 /* ---------------- Pause menu ---------------- */
 function showPauseMenu(){
-  el('pauseStats').textContent = `Bajas: ${GW.engine.player.kills}  ·  Muertes: ${GW.engine.player.deaths}`;
+  const mode = GW.engine.mode;
+  const objective = mode && mode.state && mode.state.objectiveText ? `  ·  Objetivo: ${mode.state.objectiveText}` : '';
+  el('pauseStats').textContent = `Bajas: ${GW.engine.player.kills}  ·  Muertes: ${GW.engine.player.deaths}${objective}`;
   el('pauseMenu').style.display = 'flex';
 }
 function hidePauseMenu(){ el('pauseMenu').style.display = 'none'; }
@@ -304,7 +329,7 @@ function showMatchEnd(result){
   hidePauseMenu(); hidePlayPrompt();
   el('meTitle').textContent = result.title;
   el('meSub').textContent = result.sub||'';
-  el('meStats').textContent = `Bajas: ${result.kills}  ·  Muertes: ${result.deaths}`;
+  el('meStats').textContent = result.stats || `Bajas: ${result.kills}  ·  Muertes: ${result.deaths}`;
   el('matchEndScreen').style.display = 'flex';
 }
 function hideMatchEnd(){ el('matchEndScreen').style.display = 'none'; }

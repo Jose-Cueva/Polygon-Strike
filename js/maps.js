@@ -189,55 +189,170 @@ function urban(E){
 }
 
 function campaign(E){
-  // Long linear single-player mission map: a fortified valley pushing north
-  // from a rear camp, through a checkpoint trench and a container courtyard,
-  // into a walled compound, and finally an open final-stand plateau near the
-  // extraction radio tower. Built for GW.MODE_FACTORIES.campaign's scripted
-  // waves and NPC checkpoints (see js/campaign.js for the exact coordinates).
+  // Single-player mission valley. The player starts at the rear camp (+z) and
+  // pushes toward the extraction pad (-z): camp -> checkpoint trench ->
+  // container courtyard -> walled compound -> final-stand plateau. The map also
+  // publishes every mission coordinate (NPCs, wave spawns, triggers, checkpoints)
+  // under data.campaign so js/campaign.js never duplicates level numbers.
 
-  // --- Camp (z -58..-42): safe rear area, no enemies ---
-  E.addBox(6,2.2,5,-8,1.1,-52,'tent',{rotY:-0.2});
-  E.addBox(6,2.2,5, 8,1.1,-52,'tent',{rotY:0.2});
-  [[-3,-48],[3,-48],[-5,-56],[5,-56]].forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'crate'));
-  [[-9,-45],[9,-45]].forEach(p=>E.addBarrel(p[0],p[1]));
+  // Rotate a local offset (lx,lz) by yaw (three.js convention) around (x,z).
+  const rot = (x,z,lx,lz,a)=>[x + lx*Math.cos(a) + lz*Math.sin(a), z - lx*Math.sin(a) + lz*Math.cos(a)];
+  const sandbag = (x,z,a)=>E.addBox(3,1.05,1.2,x,0.52,z,'sandbag',{rotY:a||0});
+  const crate = (x,z,a)=>E.addBox(1.4,1,1.4,x,0.5,z,'crate',{rotY:a||0});
+  // Two steel pillars with a hazard-striped beam overhead (walk-through gate).
+  function gate(z, halfGap, beamY){
+    E.addBox(0.8,beamY,0.8,-halfGap,beamY/2,z,'steel');
+    E.addBox(0.8,beamY,0.8, halfGap,beamY/2,z,'steel');
+    E.addBox(halfGap*2+0.8,0.5,0.7,0,beamY+0.15,z,'hazard',{isFloor:false});
+    E.addBox(0.4,0.4,0.4,0,beamY+0.6,z,'rust',{isFloor:false,isWall:false});
+  }
+  // Field tent: olive base with a pitched canvas roof (axis-aligned).
+  function tent(x,z,w,d,h){
+    E.addBox(w,h,d,x,h/2,z,'olive');
+    const rise = 0.9, half = d/2;
+    const slope = Math.atan2(rise, half), len = Math.sqrt(half*half + rise*rise);
+    E.addBox(w+0.5,0.14,len+0.2, x, h+rise/2, z+half/2, 'canvas', {rotX: slope, isWall:false, isFloor:false});
+    E.addBox(w+0.5,0.14,len+0.2, x, h+rise/2, z-half/2, 'canvas', {rotX:-slope, isWall:false, isFloor:false});
+    E.addBox(0.12,rise+0.2,0.12, x, h+rise/2, z, 'dark', {isWall:false, isFloor:false});
+  }
+  // Wrecked truck: rusted body, dark cabin, four wheel blocks.
+  function wreck(x,z,a){
+    const parts = [
+      [2.2,1.3,4.6, 0,0.95,0.4,'rust'], [2.1,1.1,1.6, 0,1.85,-1.6,'dark'],
+      [0.5,0.9,0.9,-1.2,0.45,1.6,'dark'],[0.5,0.9,0.9,1.2,0.45,1.6,'dark'],
+      [0.5,0.9,0.9,-1.2,0.45,-1.4,'dark'],[0.5,0.9,0.9,1.2,0.45,-1.4,'dark']
+    ];
+    parts.forEach(p=>{ const w = rot(x,z,p[3],p[5],a); E.addBox(p[0],p[1],p[2],w[0],p[4],w[1],p[6],{rotY:a}); });
+  }
 
-  // --- Checkpoint trench (z -40..-18): zigzag low cover, wave 1 ---
-  const trench = [
-    [4,1.2,3,-8,0.6,-34,'dark',0],[4,1.2,3, 7,0.6,-30,'dark',0.15],
-    [3,1.2,3,-5,0.6,-24,'concrete',0.1],[3,1.2,3, 6,0.6,-21,'concrete',-0.1],
-    [4,1.4,3,-9,0.7,-27,'dark',0.3],[4,1.4,3, 9,0.7,-36,'dark',-0.2]
-  ];
-  trench.forEach(p=>E.addBox(p[0],p[1],p[2],p[3],p[4],p[5],p[6],{rotY:p[7]}));
-  [[-2,-30],[2,-22],[-6,-19]].forEach(p=>E.addBarrel(p[0],p[1]));
+  // --- Canyon walls: chunky rock blocks along both sides, with two ravine
+  // gaps near the final plateau (z -52..-44) that enemies pour through. ---
+  for(let i=0;i<=16;i++){
+    const z = 64 - i*8;
+    const v = ((i*7919)%13)/13, v2 = ((i*104729)%17)/17;
+    if(z===-48) continue;
+    const w = 6 + v*3, h = 5.5 + v2*3;
+    [-1,1].forEach(side=>{
+      const x = side*(24 + v*1.5);
+      E.addBox(w,h,9.6,x,h/2,z,'cliff',{rotY:(v-0.5)*0.35*side});
+      // a lower boulder shelf in front of every other block breaks the straight wall line
+      if(i%2===0) E.addBox(3.2,2.2,4.5,x-side*(w/2+0.9),1.1,z+(v2-0.5)*4,'rock',{rotY:(v2-0.5)*0.9});
+    });
+  }
 
-  // --- Courtyard (z -14..8): container cluster, NPC checkpoint + wave 2 ---
+  // --- Camp (z +58..+40): safe rear area with HQ tent and a guarded gate ---
+  tent(-9,50,8,6.5,2.3);
+  tent(10,53,4.5,4.5,1.8);
+  tent(11,45,4.5,4.5,1.8);
+  E.addBox(2.4,1.5,1.5,-3,0.75,44,'olive');
+  E.addBox(2.2,0.9,1.2,-13,0.45,44,'steel');
+  [[-6,55],[5,57],[-4,46]].forEach(p=>crate(p[0],p[1],0.3));
+  [[7,48],[-14,48]].forEach(p=>E.addBarrel(p[0],p[1]));
+  wreck(15,47,0.55);
+  E.addFlag(-14,56);
+  [[-10,41,0.05],[-7,40.5,0.12],[-4.2,40.2,0.18],[4.2,40.2,-0.18],[7,40.5,-0.12],[10,41,-0.05]].forEach(p=>sandbag(p[0],p[1],p[2]));
+  gate(40, 2.6, 4.0);
+
+  // --- Checkpoint trench (z +36..+16): zigzag sandbags, two pillboxes, a
+  // guard tower with a ramp, and a barrier line with one narrow flank gap ---
+  [[-8,34,0],[-3,31,0.4],[6,30,0.1],[9,27,-0.3],[-7,24,0.2],[-1,22,-0.5],[7,20,0.15],[3,17.5,0.35],[-10,19,0]].forEach(p=>sandbag(p[0],p[1],p[2]));
+  E.addBox(4,2.4,3,-12,1.2,27,'concrete');
+  E.addBox(4,0.4,3,-12,2.6,27,'steel',{isFloor:false,isWall:false});
+  E.addBox(4,2.4,3,12,1.2,22,'concrete');
+  E.addBox(4,0.4,3,12,2.6,22,'steel',{isFloor:false,isWall:false});
+  E.addBox(3,3.2,3,-16,1.6,31,'concrete');
+  E.addRamp({x:-16, z:38.5, width:3, length:6, height:3.2, rotY:Math.PI});
+  E.addBox(3.2,1.0,0.3,-16,3.7,29.4,'sandbag',{isFloor:false});
+  wreck(5,26,-2.4);
+  [[-3,29],[2,20]].forEach(p=>E.addBarrel(p[0],p[1]));
+  crate(-5,35);
+  // barrier line at z=16: gate in the middle, solid walls, a slim gap by the west cliff
+  E.addBox(6,2.6,1,-6.5,1.3,16,'concrete');
+  E.addBox(6,2.6,1, 6.5,1.3,16,'concrete');
+  E.addBox(7,2.6,1,13,1.3,16,'concrete');
+  E.addBox(4.5,2.6,1,-12.25,1.3,16,'concrete');
+  E.addBox(0.6,2.6,1,-19.2,1.3,16,'concrete');
+  gate(16, 3.0, 4.2);
+
+  // --- Courtyard (z +12..-8): containers (one double stack, one with a ramp
+  // for an overwatch perch), crates and a second wreck ---
   const containers = [
-    [5,2.3,2.2,-9, 1.15,-2,'blue',   1.4],[5,2.3,2.2, 9, 1.15, 2,'orange', 1.4],
-    [5,2.2,2.1,-6, 1.1,  6,'green', -0.2],[5,2.2,2.1, 6, 1.1, -6,'dark',   0.2],
-    [4,2.1,2,   0, 1.05, 5,'orange',0.6]
+    [6,2.5,2.4,-9,1.25,8,'blue',0.1],[6,2.5,2.4,-9,3.75,8,'orange',0.1],
+    [6,2.5,2.4,9,1.25,6,'green',-0.12],
+    [6,2.5,2.4,-6,1.25,0,'orange',1.5],[6,2.5,2.4,7,1.25,-2,'dark',1.35],
+    [5,2.4,2.2,0,1.2,3,'blue',0.05],[6,2.5,2.4,-12,1.25,-6,'green',0.4],[6,2.5,2.4,12,1.25,-7,'orange',-0.35]
   ];
   containers.forEach(p=>E.addBox(p[0],p[1],p[2],p[3],p[4],p[5],p[6],{rotY:p[7]}));
-  [[-4,0],[4,-3],[0,-9]].forEach(p=>E.addBox(1.4,1,1.4,p[0],0.5,p[1],'crate'));
+  E.addRamp({x:9, z:12.4, width:2.4, length:5.2, height:2.5, rotY:Math.PI});
+  [[-3,12],[4,10],[-2,-4],[3,-6]].forEach((p,i)=>crate(p[0],p[1],i*0.4));
+  [[0,-1],[-4,5],[13,1]].forEach(p=>E.addBarrel(p[0],p[1]));
+  wreck(-15,3,0.9);
 
-  // --- Compound (z 12..34): walled yard, elevated watch nest, wave 3 ---
-  E.addBox(2,3.4,22,-16,1.7,23,'concrete');
-  E.addBox(2,3.4,22, 16,1.7,23,'concrete');
-  [[-7,16],[7,20],[-6,28],[6,30],[0,24]].forEach(p=>E.addBox(2.6,1.6,2.6,p[0],0.8,p[1],'dark',{rotY:0.3}));
-  E.addBox(5,3,5,10,1.5,14,'concrete');
-  E.addRamp({x:10, z:9, width:4, length:6, height:3, rotY:Math.PI});
+  // --- Compound (z -12..-36): walled yard with a gate front and back, an HQ
+  // block splitting it into two lanes, an east-wall breach, and a watchtower ---
+  E.addBox(7,3.6,1,-6.5,1.8,-12,'concrete');
+  E.addBox(7,3.6,1, 6.5,1.8,-12,'concrete');
+  E.addBox(11,3.6,1,-15.5,1.8,-12,'concrete');
+  E.addBox(5,3.6,1,12.5,1.8,-12,'concrete');
+  gate(-12, 3.2, 4.2);
+  E.addBox(1,3.6,24,-16,1.8,-24,'concrete');
+  E.addBox(1,3.6,10,16,1.8,-17,'concrete');
+  E.addBox(1,3.6,8,16,1.8,-32,'concrete');
+  E.addBox(7,3.6,1,-6.5,1.8,-36,'concrete');
+  E.addBox(7,3.6,1, 6.5,1.8,-36,'concrete');
+  E.addBox(11,3.6,1,-15.5,1.8,-36,'concrete');
+  E.addBox(11,3.6,1, 15.5,1.8,-36,'concrete');
+  gate(-36, 3.2, 4.2);
+  E.addBuilding(8,5,6,0,-24,0,'building2');
+  E.addBox(8.4,0.3,6.4,0,5.15,-24,'steel',{isFloor:false,isWall:false});
+  E.addBox(3,3.4,3,-12,1.7,-31,'concrete');
+  E.addRamp({x:-12, z:-23.5, width:3, length:6, height:3.4, rotY:Math.PI});
+  E.addBox(3.2,1.0,0.3,-12,3.9,-32.6,'sandbag',{isFloor:false});
+  [[-8,-16,0.1],[8,-16,-0.1],[-6,-30,0.3],[9,-29,-0.2],[12,-22,1.5]].forEach(p=>sandbag(p[0],p[1],p[2]));
+  [[4,-19],[-5,-20],[11,-33]].forEach((p,i)=>crate(p[0],p[1],i*0.5));
+  [[12,-19],[-12,-18],[-3,-33]].forEach(p=>E.addBarrel(p[0],p[1]));
+  E.addBox(2.4,1.6,1.6,11,0.8,-33.5,'steel');
+  E.addBox(2.2,1.2,1.4,-13,0.6,-14.5,'olive');
 
-  // --- Final stand (z 38..54): open plateau, extraction tower, wave 4 ---
-  const bunkers = [
-    [-8,44],[8,44],[-10,50],[10,50],[0,40]
-  ];
-  bunkers.forEach(p=>E.addBox(3,1.6,2.6,p[0],0.8,p[1],'concrete',{rotY:(p[0]*p[1])%2}));
-  [[-4,47],[4,52]].forEach(p=>E.addBarrel(p[0],p[1]));
-  E.addTower(0,60);
+  // --- Final stand (z -40..-58): helipad, sandbag ring, corner bunkers, the
+  // radio tower. Enemies come through the ravines, the north edge and the gate ---
+  E.addBox(10,0.3,10,0,0.15,-48,'steel');
+  [[0,-43.2],[0,-52.8]].forEach(p=>E.addBox(10,0.32,0.6,p[0],0.16,p[1],'hazard',{isWall:false}));
+  [[-4.7,-48],[4.7,-48]].forEach(p=>E.addBox(0.6,0.32,10,p[0],0.16,p[1],'hazard',{isWall:false}));
+  for(let k=0;k<8;k++){
+    const a = k*Math.PI/4 + Math.PI/8;
+    const x = Math.sin(a)*9.2, z = -48 + Math.cos(a)*9.2;
+    E.addBox(3,1.05,1.2,x,0.52,z,'sandbag',{rotY:a});
+  }
+  [[-14,-43],[14,-43],[-14,-54],[14,-54]].forEach(p=>E.addBox(3,2.2,2.6,p[0],1.1,p[1],'concrete'));
+  [[-7,-41],[8,-56]].forEach(p=>E.addBarrel(p[0],p[1]));
+  crate(7,-40,0.4);
+  E.addTower(0,-58);
+  E.addBox(4.2,1.3,4.2,0,0.65,-58,'concrete');
+  E.addBox(3.4,0.25,3.4,0,5.4,-58,'steel',{isFloor:false,isWall:false});
+  [[-1.55,-56.45],[1.55,-56.45],[-1.55,-59.55],[1.55,-59.55]].forEach(p=>E.addBox(0.14,3.0,0.14,p[0],6.9,p[1],'steel',{isFloor:false,isWall:false}));
+  E.addBox(0.12,4.5,0.12,0.7,10.4,-58.6,'steel',{isFloor:false,isWall:false});
+  E.addBox(2.4,1.5,1.5,3.6,0.75,-56,'olive');
+  E.addBox(1.2,0.9,0.9,4.4,0.45,-54.2,'steel');
 
   return {
-    spawnsFFA:[[0,-56]],
-    spawnsA:[[0,-56]],
-    ammoCrates:[[0,-27],[0,-1],[0,25],[0,46]]
+    spawnsFFA:[[0,56]],
+    spawnsA:[[0,56]],
+    ammoCrates:[[-4,53],[0,33],[0,-6],[-12,-24],[-7,-46]],
+    campaign:{
+      npcs:{ vega:[2.5,49], ruiz:[-4,13], radio:[3.2,-54] },
+      checkpoints:{ camp:[0,56], trench:[0,38], courtyard:[0,19], compound:[0,-4], final:[0,-40], pad:[0,-46] },
+      triggers:{ trench:32, courtyard:8, compound:-9, final:-42 },
+      waypoints:{ trench:[0,30], courtyard:[0,2], compoundGate:[0,-12], pad:[0,-48] },
+      waves:{
+        trench:[[-8,22],[6,20],[-3,18],[9,26],[-12,23]],
+        courtyard:[[-8,-2],[8,-4],[0,-6],[-4,2],[6,4],[-10,5],[10,0]],
+        courtyardFlank:[[-17,10],[17,10]],
+        compound:[[-7,-17],[7,-17],[-9,-28],[9,-28],[12,-16],[-4,-33]],
+        commander:[0,-31],
+        finalGates:[[-26,-48],[26,-48],[-6,-64],[6,-64],[0,-38]]
+      }
+    }
   };
 }
 
@@ -251,9 +366,10 @@ GW.MAPS = [
   { id:'urban', name:'COMPLEJO URBANO', desc:'Tres carriles verticales entre bloques de edificios convergen en una plaza central.',
     size:95, groundColor:'#6a6a62', fogColor:0x8b8b83, fogDensity:0.014,
     skyColors:['#42566e','#6f7a78','#a3a294','#6f6455'], build:urban },
-  { id:'campaign', name:'VALLE TRUENO ROJO', desc:'Mapa largo de un solo jugador: avanza desde el campamento hasta la torre de extracción.',
-    size:70, groundColor:'#565c48', fogColor:0x8f9584, fogDensity:0.016,
-    skyColors:['#3d4f5e','#71766c','#a9a487','#7a6a52'], build:campaign }
+  { id:'campaign', name:'VALLE TRUENO ROJO', desc:'Cañón fortificado de un solo jugador: campamento, trinchera, patio de contenedores, complejo amurallado y helipuerto de extracción.',
+    size:72, groundColor:'#565c48', fogColor:0x9da397, fogDensity:0.013,
+    sunIntensity:1.35, hemiIntensity:0.9, ambientIntensity:0.45,
+    skyColors:['#6a8199','#9aa39a','#c8c0a0','#8c7c5c'], build:campaign }
 ];
 
 GW.getMap = function(id){ return GW.MAPS.find(m=>m.id===id) || GW.MAPS[0]; };

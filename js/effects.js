@@ -509,9 +509,17 @@ GW.Effects = (function(){
     });
   }
 
+  // Grey dust puff used when scripted enemies deploy into the level.
+  function spawnDeployPuff(position){
+    ensureInit();
+    if(!inited) return;
+    spawnBurst(position, null, 0x9a9484, {speedMin:0.8,speedMax:2.6,life:0.9,size:90,gravity:-0.4,halfAngle:Math.PI*0.6,blending:THREE.NormalBlending,opacityMul:0.55});
+  }
+
   return {
     init: init,
     update: update,
+    spawnDeployPuff: spawnDeployPuff,
     spawnBulletImpact: spawnBulletImpact,
     spawnMuzzleFlash: spawnMuzzleFlash,
     spawnKillFlash: spawnKillFlash,
